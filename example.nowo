@@ -1,0 +1,10 @@
+identity := (x) x
+add := (x, y) x + y
+
+main := ()
+	x := 1;
+	y := 2;
+	print(add(x, y))
+
+
+
