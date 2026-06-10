@@ -1,10 +1,6 @@
-identity := (x) x
-add := (x, y) x + y
+fib := (x)
+	x < 2
+		? 1
+		! fib(x - 1) + fib(x - 2)
 
-main := ()
-	x := 1;
-	y := 2;
-	print(add(x, y))
-
-
-
+fib(40)

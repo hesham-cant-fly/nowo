@@ -20,13 +20,15 @@ type rule struct {
 }
 
 const (
-	PREC_NONE   = iota
-	PREC_BIND   // ;
-	PREC_ASSIGN // =
-	PREC_TERM   // + -
-	PREC_FACTOR // * /
-	PREC_ACCESS // .
-	PREC_UNARY  // prefix - +
+	PREC_NONE    = iota
+	PREC_BIND    // ;
+	PREC_ASSIGN  // = :=
+	PREC_TERNARY // ? !
+	PREC_CMP     // == != < > <= >=
+	PREC_TERM    // + -
+	PREC_FACTOR  // * /
+	PREC_ACCESS  // .
+	PREC_UNARY   // prefix - +
 	PREC_PRIMARY
 )
 const PREC_LOWEST = PREC_BIND
@@ -144,13 +146,13 @@ func (p *parser) parseExpr(prec int) (Ast, error) {
 		return nil, err
 	}
 
-	for !p.ended() && prec <= getRule(p.peek().Kind).prec {
-		tok := p.advance()
-		infixRule := getRule(tok.Kind).infix
-		if infixRule == nil {
-			return nil, fmt.Errorf("invalid operator '%s'", tok.Lexem)
+	for !p.ended() {
+		r := getRule(p.peek().Kind)
+		if prec > r.prec || r.infix == nil {
+			break
 		}
-		left, err = infixRule(p, left)
+		p.advance()
+		left, err = r.infix(p, left)
 		if err != nil {
 			return nil, err
 		}
@@ -161,18 +163,21 @@ func (p *parser) parseExpr(prec int) (Ast, error) {
 
 func getRule(kind lexer.TokenKind) rule {
 	switch kind {
-	case lexer.SEMICOLON:  return rule{infix: parseBinding, prec: PREC_BIND}
-	case lexer.COLON:      return rule{infix: parseDecl, prec: PREC_ASSIGN}
-	case lexer.OPEN_PAREN: return rule{prefix: parseFunction, infix: parseCall, prec: PREC_PRIMARY}
-	case lexer.OPEN_BRACE: return rule{prefix: parseGrouped, prec: PREC_PRIMARY}
-	case lexer.PLUS:       return rule{prefix: parseUnary, infix: parseBinary, prec: PREC_TERM}
-	case lexer.MINUS:      return rule{prefix: parseUnary, infix: parseBinary, prec: PREC_TERM}
-	case lexer.STAR:       return rule{infix: parseBinary, prec: PREC_FACTOR}
-	case lexer.SLASH:      return rule{infix: parseBinary, prec: PREC_FACTOR}
-	case lexer.IDENT:      return rule{prefix: parseIdent, prec: PREC_PRIMARY}
-	case lexer.INT:        return rule{prefix: parseNumber, prec: PREC_PRIMARY}
-	case lexer.FLOAT:      return rule{prefix: parseNumber, prec: PREC_PRIMARY}
-	// case lexer.DOT:        return rule{infix: parseAccess, prec: PREC_PRIMARY}
+	case lexer.SEMICOLON:     return rule{infix: parseBinding, prec: PREC_BIND}
+	case lexer.COLON:         return rule{infix: parseDecl, prec: PREC_ASSIGN}
+	case lexer.OPEN_PAREN:    return rule{prefix: parseFunction, infix: parseCall, prec: PREC_PRIMARY}
+	case lexer.OPEN_BRACE:    return rule{prefix: parseGrouped, prec: PREC_PRIMARY}
+	case lexer.QUESTION_MARK: return rule{infix: parseTernary, prec: PREC_TERNARY, rightAssoc: true}
+	case lexer.EQEQ:          return rule{infix: parseBinary, prec: PREC_CMP}
+	case lexer.LESS:          return rule{infix: parseBinary, prec: PREC_CMP}
+	case lexer.GREATER:       return rule{infix: parseBinary, prec: PREC_CMP}
+	case lexer.PLUS:          return rule{prefix: parseUnary, infix: parseBinary, prec: PREC_TERM}
+	case lexer.MINUS:         return rule{prefix: parseUnary, infix: parseBinary, prec: PREC_TERM}
+	case lexer.STAR:          return rule{infix: parseBinary, prec: PREC_FACTOR}
+	case lexer.SLASH:         return rule{infix: parseBinary, prec: PREC_FACTOR}
+	case lexer.IDENT:         return rule{prefix: parseIdent, prec: PREC_PRIMARY}
+	case lexer.INT:           return rule{prefix: parseNumber, prec: PREC_PRIMARY}
+	case lexer.FLOAT:         return rule{prefix: parseNumber, prec: PREC_PRIMARY}
 	default:
 		return rule{}
 	}
@@ -227,6 +232,30 @@ func parseGrouped(p *parser) (Ast, error) {
 		return nil, errors.New("expected }")
 	}
 	return AstGrouping{Child: expr}, nil
+}
+
+func parseTernary(p *parser, cond Ast) (Ast, error) {
+	op := p.previous.Kind
+	prec := getRule(op).prec + 1
+	then, err := p.parseExpr(prec)
+	if err != nil {
+		return nil, err
+	}
+
+	if !p.match(lexer.EXCLAMATION_MARK) {
+		return nil, fmt.Errorf("Expected `!`")
+	}
+
+	else_, err := p.parseExpr(prec)
+	if err != nil {
+		return nil, err
+	}
+
+	return AstTernary {
+		Cond: cond,
+		Then: then,
+		Else: else_,
+	}, nil
 }
 
 func parseUnary(p *parser) (Ast, error) {

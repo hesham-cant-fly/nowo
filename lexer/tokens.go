@@ -19,7 +19,12 @@ const (
 	CLOSE_PAREN           // )
 	OPEN_BRACE            // {
 	CLOSE_BRACE           // }
+	QUESTION_MARK         // ?
+	EXCLAMATION_MARK      // !
 	EQ                    // =
+	EQEQ                  // ==
+	LESS                  // <
+	GREATER               // >
 	COLON                 // :
 	COMMA                 // ,
 	SEMICOLON             // ;

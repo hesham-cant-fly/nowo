@@ -1,6 +1,12 @@
 package parser
 
-import "github.com/hesham-cant-fly/haste-lang/lexer"
+import (
+	"fmt"
+	"reflect"
+	"strings"
+
+	"github.com/hesham-cant-fly/haste-lang/lexer"
+)
 
 type Ast interface{}
 
@@ -12,14 +18,16 @@ type AstIdentifier struct {
 	value string
 }
 
+func (n AstIdentifier) Value() string { return n.value }
+
 type AstDecl struct {
-	Lhs   Ast
-	Value Ast
+	Lhs   Ast `ast:"child"`
+	Value Ast `ast:"child"`
 }
 
 type AstAssign struct {
-	Lhs   Ast
-	Value Ast
+	Lhs   Ast `ast:"child"`
+	Value Ast `ast:"child"`
 }
 
 type AstFunction struct {
@@ -37,24 +45,30 @@ type AstBind struct {
 	Rhs Ast
 }
 
+type AstTernary struct {
+	Cond Ast `ast:"child"`
+	Then Ast `ast:"child"`
+	Else Ast `ast:"child"`
+}
+
 type AstGrouping struct {
-	Child Ast
+	Child Ast `ast:"child"`
 }
 
 type AstBinary struct {
-	Lhs Ast
-	Rhs Ast
-	Op  lexer.TokenKind
+	Lhs Ast             `ast:"child"`
+	Rhs Ast             `ast:"child"`
+	Op  lexer.TokenKind `ast:"label"`
 }
 
 type AstUnary struct {
-	Rhs Ast
-	Op  lexer.TokenKind
+	Rhs Ast             `ast:"child"`
+	Op  lexer.TokenKind `ast:"label"`
 }
 
 type AstAccess struct {
-	Lhs   Ast
-	Field string
+	Lhs   Ast    `ast:"child"`
+	Field string `ast:"label"`
 }
 
 type AstCall struct {
@@ -64,4 +78,244 @@ type AstCall struct {
 
 type AstNumber struct {
 	Value string
+}
+
+type CustomFormatter interface {
+	FormatAst(indent string) string
+}
+
+func (p AstProgram) String() string {
+	var b strings.Builder
+	b.WriteString("Program\n")
+	for i, node := range p.Nodes {
+		prefix := "├─ "
+		childPrefix := "│  "
+		if i == len(p.Nodes)-1 {
+			prefix = "└─ "
+			childPrefix = "   "
+		}
+		b.WriteString(prefix)
+		b.WriteString(formatAst(node, childPrefix))
+		if i < len(p.Nodes)-1 {
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
+func (n AstIdentifier) FormatAst(indent string) string {
+	return fmt.Sprintf("Ident %q", n.value)
+}
+
+func (n AstNumber) FormatAst(indent string) string {
+	return fmt.Sprintf("Num %s", n.Value)
+}
+
+func (n AstBind) FormatAst(indent string) string {
+	exprs := flattenBind(&n)
+	var b strings.Builder
+	b.WriteString("Seq ;\n")
+	for i, expr := range exprs {
+		prefix := "├─ "
+		childPrefix := indent + "│  "
+		if i == len(exprs)-1 {
+			prefix = "└─ "
+			childPrefix = indent + "   "
+		}
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(indent + prefix)
+		b.WriteString(formatAst(expr, childPrefix))
+	}
+	return b.String()
+}
+
+func (n AstCall) FormatAst(indent string) string {
+	var b strings.Builder
+	b.WriteString("Call\n")
+	b.WriteString(indent + "├─ Callee: ")
+	b.WriteString(formatAst(n.Callee, indent+"│        "))
+	if len(n.Args) > 0 {
+		b.WriteString("\n" + indent + "└─ Args\n")
+		for i, arg := range n.Args {
+			prefix := "├─ "
+			childPrefix := "│  "
+			if i == len(n.Args)-1 {
+				prefix = "└─ "
+				childPrefix = "   "
+			}
+			b.WriteString(indent + "   " + prefix)
+			b.WriteString(formatAst(arg, indent+"   "+childPrefix))
+			if i < len(n.Args)-1 {
+				b.WriteByte('\n')
+			}
+		}
+	} else {
+		b.WriteString("\n" + indent + "└─ Args: none")
+	}
+	return b.String()
+}
+
+func (n AstFunction) FormatAst(indent string) string {
+	var b strings.Builder
+	b.WriteString("Function\n")
+	b.WriteString(indent + "├─ Params: ")
+	params := make([]string, len(n.Args))
+	for i, arg := range n.Args {
+		s := arg.Name
+		if arg.DefaultValue != nil {
+			s += " = " + formatAstOneLine(arg.DefaultValue)
+		}
+		params[i] = s
+	}
+	b.WriteString(strings.Join(params, ", "))
+	b.WriteString("\n" + indent + "└─ Body\n")
+	b.WriteString(indent + "   └─ ")
+	b.WriteString(formatAst(n.Body, indent+"      "))
+	return b.String()
+}
+
+func formatAst(node Ast, indent string) string {
+	if node == nil {
+		return "nil"
+	}
+
+	if cf, ok := node.(CustomFormatter); ok {
+		return cf.FormatAst(indent)
+	}
+
+	v := reflect.ValueOf(node)
+	for v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return "nil"
+		}
+		v = v.Elem()
+	}
+	t := v.Type()
+
+	label := deriveLabel(t, v)
+	children := collectChildren(t, v)
+	return buildTree(label, children, indent)
+}
+
+func deriveLabel(t reflect.Type, v reflect.Value) string {
+	label := strings.TrimPrefix(t.Name(), "Ast")
+
+	for i := range t.NumField() {
+		f := t.Field(i)
+		if f.Tag.Get("ast") == "label" {
+			fv := v.Field(i)
+			if f.Type.Kind() == reflect.String {
+				label += " ." + fv.String()
+			} else if f.Type.Name() == "TokenKind" {
+				kind := lexer.TokenKind(fv.Int())
+				label += " " + tokenSymbol(kind)
+			}
+		}
+	}
+
+	return label
+}
+
+func collectChildren(t reflect.Type, v reflect.Value) []Ast {
+	var children []Ast
+	for i := range t.NumField() {
+		f := t.Field(i)
+		tag := f.Tag.Get("ast")
+		if !strings.HasPrefix(tag, "child") {
+			continue
+		}
+		fv := v.Field(i)
+		children = append(children, fv.Interface().(Ast))
+	}
+	return children
+}
+
+func buildTree(label string, children []Ast, indent string) string {
+	if len(children) == 0 {
+		return label
+	}
+
+	var b strings.Builder
+	b.WriteString(label + "\n")
+	for i, child := range children {
+		prefix := "├─ "
+		childIndent := indent + "│  "
+		if i == len(children)-1 {
+			prefix = "└─ "
+			childIndent = indent + "   "
+		}
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(indent + prefix)
+		b.WriteString(formatAst(child, childIndent))
+	}
+	return b.String()
+}
+
+func flattenBind(n *AstBind) []Ast {
+	var exprs []Ast
+	var walk func(node Ast)
+	walk = func(node Ast) {
+		switch n := node.(type) {
+		case *AstBind:
+			walk(n.Lhs)
+			walk(n.Rhs)
+		case AstBind:
+			walk(n.Lhs)
+			walk(n.Rhs)
+		default:
+			exprs = append(exprs, node)
+		}
+	}
+	walk(n)
+	return exprs
+}
+
+func formatAstOneLine(node Ast) string {
+	switch n := node.(type) {
+	case *AstIdentifier:
+		return fmt.Sprintf("%q", n.value)
+	case AstIdentifier:
+		return fmt.Sprintf("%q", n.value)
+	case *AstNumber:
+		return n.Value
+	case AstNumber:
+		return n.Value
+	case *AstFunction:
+		return fmt.Sprintf("(%s) ...", formatParams(n.Args))
+	case AstFunction:
+		return fmt.Sprintf("(%s) ...", formatParams(n.Args))
+	case *AstBinary:
+		return fmt.Sprintf("(%s %s %s)", formatAstOneLine(n.Lhs), tokenSymbol(n.Op), formatAstOneLine(n.Rhs))
+	case AstBinary:
+		return fmt.Sprintf("(%s %s %s)", formatAstOneLine(n.Lhs), tokenSymbol(n.Op), formatAstOneLine(n.Rhs))
+	default:
+		return "..."
+	}
+}
+
+func formatParams(args []AstFunctionArg) string {
+	names := make([]string, len(args))
+	for i, a := range args {
+		names[i] = a.Name
+	}
+	return strings.Join(names, ", ")
+}
+
+func tokenSymbol(kind lexer.TokenKind) string {
+	switch kind {
+	case lexer.PLUS:
+		return "+"
+	case lexer.MINUS:
+		return "-"
+	case lexer.STAR:
+		return "*"
+	case lexer.SLASH:
+		return "/"
+	default:
+		return fmt.Sprintf("TK(%d)", kind)
+	}
 }

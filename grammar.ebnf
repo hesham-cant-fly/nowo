@@ -1,0 +1,34 @@
+(* Nowo Language Grammar *)
+
+program      = { expression } ;
+
+expression   = sequence ;
+
+sequence     = declaration { ";" declaration } ;
+
+declaration  = identifier ":" "=" expression | additive ;
+
+additive     = multiplicative { ("+" | "-") multiplicative } ;
+
+multiplicative = unary { ("*" | "/") unary } ;
+
+unary        = ("+" | "-") unary | primary ;
+
+primary      = identifier
+             | number
+             | "{" expression "}"
+             | "(" [ parameters ] ")" primary
+             | primary "(" [ arguments ] ")"
+             ;
+
+parameters   = parameter { "," parameter } ;
+parameter    = identifier [ "=" expression ] ;
+
+arguments    = expression { "," expression } ;
+
+number       = int | float ;
+int          = digit { digit } ;
+float        = digit { digit } "." digit { digit } ;
+identifier   = letter { letter | digit } ;
+letter       = "a" .. "z" | "A" .. "Z" | "_" ;
+digit        = "0" .. "9" ;

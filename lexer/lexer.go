@@ -25,29 +25,34 @@ func Tokenize(input string) []Token {
 		case '+':
 			tokens = append(tokens, s.makeToken(PLUS))
 		case '-':
-			tokens = append(tokens, s.makeToken(MINUS))
-		case '*':
-			tokens = append(tokens, s.makeToken(STAR))
-		case '/':
-			tokens = append(tokens, s.makeToken(SLASH))
-		case '(':
-			tokens = append(tokens, s.makeToken(OPEN_PAREN))
-		case ')':
-			tokens = append(tokens, s.makeToken(CLOSE_PAREN))
-		case '{':
-			tokens = append(tokens, s.makeToken(OPEN_BRACE))
-		case '}':
-			tokens = append(tokens, s.makeToken(CLOSE_BRACE))
+			if s.peek() == '-' {
+				for !s.isAtEnd() && s.peek() != '\n' {
+					s.advance()
+				}
+			} else {
+				tokens = append(tokens, s.makeToken(MINUS))
+			}
+		case '*': tokens = append(tokens, s.makeToken(STAR))
+		case '/': tokens = append(tokens, s.makeToken(SLASH))
+		case '(': tokens = append(tokens, s.makeToken(OPEN_PAREN))
+		case ')': tokens = append(tokens, s.makeToken(CLOSE_PAREN))
+		case '{': tokens = append(tokens, s.makeToken(OPEN_BRACE))
+		case '}': tokens = append(tokens, s.makeToken(CLOSE_BRACE))
+		case '?': tokens = append(tokens, s.makeToken(QUESTION_MARK))
+		case '!': tokens = append(tokens, s.makeToken(EXCLAMATION_MARK))
 		case '=':
-			tokens = append(tokens, s.makeToken(EQ))
-		case ':':
-			tokens = append(tokens, s.makeToken(COLON))
-		case ',':
-			tokens = append(tokens, s.makeToken(COMMA))
-		case ';':
-			tokens = append(tokens, s.makeToken(SEMICOLON))
-		case '.':
-			tokens = append(tokens, s.makeToken(DOT))
+			if s.peek() == '=' {
+				s.advance()
+				tokens = append(tokens, s.makeToken(EQEQ))
+			} else {
+				tokens = append(tokens, s.makeToken(EQ))
+			}
+		case '<': tokens = append(tokens, s.makeToken(LESS))
+		case '>': tokens = append(tokens, s.makeToken(GREATER))
+		case ':': tokens = append(tokens, s.makeToken(COLON))
+		case ',': tokens = append(tokens, s.makeToken(COMMA))
+		case ';': tokens = append(tokens, s.makeToken(SEMICOLON))
+		case '.': tokens = append(tokens, s.makeToken(DOT))
 		default:
 			if isAlpha(c) {
 				tokens = append(tokens, s.identifier())
