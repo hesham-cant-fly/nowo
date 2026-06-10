@@ -1,6 +1,7 @@
+
 fib := (x)
 	x < 2
-		? 1
-		! fib(x - 1) + fib(x - 2)
+	  ? 1
+	  ! fib(x - 1) + fib(x - 2)
 
-fib(40)
+fib(12)
