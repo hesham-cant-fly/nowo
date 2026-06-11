@@ -36,17 +36,21 @@
     (modify-syntax-entry ?!  "." st)
     (modify-syntax-entry ?<  "." st)
     (modify-syntax-entry ?>  "." st)
+    (modify-syntax-entry ?\[ "(]" st)
+    (modify-syntax-entry ?\] ")[" st)
+    (modify-syntax-entry ?#  "." st)
     st)
   "Syntax table for `nowo-mode'.")
 
 (defconst nowo-operators
-  (regexp-opt '("+" "-" "*" "/" ";" "." "=" ":=" "==" "!=" "<" ">" "?" "!"))
+  (regexp-opt '("+" "-" "*" "/" ";" "." "=" ":=" "::" "==" "!=" "<" ">" "<=" ">=" "?" "!" "#" "++" "[" "]"))
   "Regexp matching Nowo operators.")
 
 (defconst nowo-font-lock-keywords
   (list
    '("\\b[0-9]+\\(?:\\.[0-9]+\\)?\\b" . font-lock-constant-face)
    '("\\<\\(\\sw+\\)\\s-*:=" (1 font-lock-function-name-face))
+   '("\\<\\(\\sw+\\)\\s-*::" (1 font-lock-function-name-face))
    '("\\<\\(\\sw+\\)\\s-*(" (1 font-lock-function-name-face))
    (cons nowo-operators 'font-lock-builtin-face))
   "Font lock keywords for `nowo-mode'.")

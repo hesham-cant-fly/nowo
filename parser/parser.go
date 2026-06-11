@@ -20,15 +20,18 @@ type rule struct {
 }
 
 const (
-	PREC_NONE    = iota
-	PREC_BIND    // ;
-	PREC_ASSIGN  // = :=
-	PREC_TERNARY // ? !
-	PREC_CMP     // == != < > <= >=
-	PREC_TERM    // + -
-	PREC_FACTOR  // * /
-	PREC_ACCESS  // .
-	PREC_UNARY   // prefix - +
+	PREC_NONE      = iota
+	PREC_BIND      // ;
+	PREC_ASSIGN    // = :=
+	PREC_TERNARY   // ? !
+	PREC_CMP       // == != < > <= >=
+	PREC_TERM      // + -
+	PREC_CONCAT    // ++
+	PREC_FACTOR    // * /
+	PREC_SUBSCRIPT // [
+	PREC_PIPE      // :
+	PREC_ACCESS    // .
+	PREC_UNARY     // prefix - +
 	PREC_PRIMARY
 )
 const PREC_LOWEST = PREC_BIND
@@ -98,7 +101,7 @@ func parseFunction(p *parser) (Ast, error) {
 		return nil, errors.New("expected ) after parameters")
 	}
 
-	body, err := p.parseExpr(PREC_LOWEST)
+	body, err := p.parseExpr(PREC_ASSIGN)
 	if err != nil {
 		return nil, err
 	}
@@ -136,6 +139,7 @@ func (p *parser) parseExpr(prec int) (Ast, error) {
 	}
 
 	tok := p.advance()
+
 	prefixRule := getRule(tok.Kind).prefix
 	if prefixRule == nil {
 		return nil, fmt.Errorf("expected expression, got '%s'", tok.Lexem)
@@ -163,21 +167,54 @@ func (p *parser) parseExpr(prec int) (Ast, error) {
 
 func getRule(kind lexer.TokenKind) rule {
 	switch kind {
-	case lexer.SEMICOLON:     return rule{infix: parseBinding, prec: PREC_BIND}
-	case lexer.COLON:         return rule{infix: parseDecl, prec: PREC_ASSIGN}
-	case lexer.OPEN_PAREN:    return rule{prefix: parseFunction, infix: parseCall, prec: PREC_PRIMARY}
-	case lexer.OPEN_BRACE:    return rule{prefix: parseGrouped, prec: PREC_PRIMARY}
-	case lexer.QUESTION_MARK: return rule{infix: parseTernary, prec: PREC_TERNARY, rightAssoc: true}
-	case lexer.EQEQ:          return rule{infix: parseBinary, prec: PREC_CMP}
-	case lexer.LESS:          return rule{infix: parseBinary, prec: PREC_CMP}
-	case lexer.GREATER:       return rule{infix: parseBinary, prec: PREC_CMP}
-	case lexer.PLUS:          return rule{prefix: parseUnary, infix: parseBinary, prec: PREC_TERM}
-	case lexer.MINUS:         return rule{prefix: parseUnary, infix: parseBinary, prec: PREC_TERM}
-	case lexer.STAR:          return rule{infix: parseBinary, prec: PREC_FACTOR}
-	case lexer.SLASH:         return rule{infix: parseBinary, prec: PREC_FACTOR}
-	case lexer.IDENT:         return rule{prefix: parseIdent, prec: PREC_PRIMARY}
-	case lexer.INT:           return rule{prefix: parseNumber, prec: PREC_PRIMARY}
-	case lexer.FLOAT:         return rule{prefix: parseNumber, prec: PREC_PRIMARY}
+	case lexer.SEMICOLON:
+		return rule{infix: parseBinding, prec: PREC_BIND}
+	case lexer.HASHTAG:
+		return rule{prefix: parseUnary, prec: PREC_UNARY}
+	case lexer.COLON_EQ:
+		return rule{infix: parseDecl, prec: PREC_ASSIGN}
+	case lexer.COLON:
+		return rule{infix: parsePipe, prec: PREC_PIPE}
+	case lexer.OPEN_PAREN:
+		return rule{prefix: parseFunction, infix: parseCall, prec: PREC_PRIMARY}
+	case lexer.OPEN_BRACE:
+		return rule{prefix: parseGrouped, prec: PREC_PRIMARY}
+	case lexer.QUESTION_MARK:
+		return rule{infix: parseTernary, prec: PREC_TERNARY, rightAssoc: true}
+	case lexer.EQEQ:
+		return rule{infix: parseBinary, prec: PREC_CMP}
+	case lexer.LESS:
+		return rule{infix: parseBinary, prec: PREC_CMP}
+	case lexer.GREATER:
+		return rule{infix: parseBinary, prec: PREC_CMP}
+	case lexer.LESS_EQ:
+		return rule{infix: parseBinary, prec: PREC_CMP}
+	case lexer.GREATER_EQ:
+		return rule{infix: parseBinary, prec: PREC_CMP}
+	case lexer.BANG_EQ:
+		return rule{infix: parseBinary, prec: PREC_CMP}
+	case lexer.EXCLAMATION_MARK:
+		return rule{prefix: parseUnary, prec: PREC_UNARY}
+	case lexer.PLUS:
+		return rule{prefix: parseUnary, infix: parseBinary, prec: PREC_TERM}
+	case lexer.MINUS:
+		return rule{prefix: parseUnary, infix: parseBinary, prec: PREC_TERM}
+	case lexer.STAR:
+		return rule{infix: parseBinary, prec: PREC_FACTOR}
+	case lexer.SLASH:
+		return rule{infix: parseBinary, prec: PREC_FACTOR}
+	case lexer.PLUS_PLUS:
+		return rule{infix: parseBinary, prec: PREC_CONCAT}
+	case lexer.DOT:
+		return rule{prefix: parseArrayLiteral, prec: PREC_PRIMARY}
+	case lexer.OPEN_BRACKET:
+		return rule{infix: parseSubscript, prec: PREC_SUBSCRIPT}
+	case lexer.IDENT:
+		return rule{prefix: parseIdent, prec: PREC_PRIMARY}
+	case lexer.INT:
+		return rule{prefix: parseNumber, prec: PREC_PRIMARY}
+	case lexer.FLOAT:
+		return rule{prefix: parseNumber, prec: PREC_PRIMARY}
 	default:
 		return rule{}
 	}
@@ -200,10 +237,6 @@ func parseDecl(p *parser, lhs Ast) (Ast, error) {
 		return nil, fmt.Errorf("Expected an identifier here")
 	}
 
-	if !p.match(lexer.EQ) {
-		return nil, fmt.Errorf("Expected an = after :")
-	}
-
 	value, err := p.parseExpr(PREC_ASSIGN)
 	if err != nil {
 		return nil, err
@@ -213,6 +246,54 @@ func parseDecl(p *parser, lhs Ast) (Ast, error) {
 		Lhs:   lhs,
 		Value: value,
 	}, nil
+}
+
+func parsePipe(p *parser, lhs Ast) (Ast, error) {
+	rhs, err := p.parseExpr(PREC_PIPE + 1)
+	if err != nil {
+		return nil, err
+	}
+
+	switch r := rhs.(type) {
+	case AstCall:
+		return AstCall{Callee: r.Callee, Args: append([]Ast{lhs}, r.Args...)}, nil
+	default:
+		return AstCall{Callee: rhs, Args: []Ast{lhs}}, nil
+	}
+}
+
+func parseArrayLiteral(p *parser) (Ast, error) {
+	if !p.match(lexer.OPEN_BRACKET) {
+		return nil, fmt.Errorf("expected '[' after '.'")
+	}
+	var elements []Ast
+	for !p.check(lexer.CLOSE_BRACKET) && !p.ended() {
+		elem, err := p.parseExpr(PREC_LOWEST)
+		if err != nil {
+			return nil, err
+		}
+		elements = append(elements, elem)
+		if !p.check(lexer.CLOSE_BRACKET) && !p.ended() {
+			if !p.match(lexer.COMMA) {
+				return nil, fmt.Errorf("expected ',' or ']' in array literal")
+			}
+		}
+	}
+	if !p.match(lexer.CLOSE_BRACKET) {
+		return nil, fmt.Errorf("expected ']'")
+	}
+	return AstArray{Elements: elements}, nil
+}
+
+func parseSubscript(p *parser, lhs Ast) (Ast, error) {
+	index, err := p.parseExpr(PREC_LOWEST)
+	if err != nil {
+		return nil, err
+	}
+	if !p.match(lexer.CLOSE_BRACKET) {
+		return nil, fmt.Errorf("expected ']'")
+	}
+	return AstSubscript{Array: lhs, Index: index}, nil
 }
 
 func parseIdent(p *parser) (Ast, error) {
@@ -235,9 +316,9 @@ func parseGrouped(p *parser) (Ast, error) {
 }
 
 func parseTernary(p *parser, cond Ast) (Ast, error) {
-	op := p.previous.Kind
-	prec := getRule(op).prec + 1
-	then, err := p.parseExpr(prec)
+	// op := p.previous.Kind
+	// prec := getRule(op).prec
+	then, err := p.parseExpr(PREC_LOWEST)
 	if err != nil {
 		return nil, err
 	}
@@ -246,12 +327,12 @@ func parseTernary(p *parser, cond Ast) (Ast, error) {
 		return nil, fmt.Errorf("Expected `!`")
 	}
 
-	else_, err := p.parseExpr(prec)
+	else_, err := p.parseExpr(PREC_LOWEST)
 	if err != nil {
 		return nil, err
 	}
 
-	return AstTernary {
+	return AstTernary{
 		Cond: cond,
 		Then: then,
 		Else: else_,

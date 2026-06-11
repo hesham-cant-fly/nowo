@@ -31,8 +31,9 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 		}
 	}()
 
-	proto := &FuncValue{Name: "main", Chunk: main, Env: NewEnv(nil)}
-	vm.frames = append(vm.frames, &Frame{fn: proto, stack: make([]Value, 0, 256), env: proto.Env})
+	global := StdEnv()
+	proto := &FuncValue{Name: "main", Chunk: main, Env: global}
+	vm.frames = append(vm.frames, &Frame{fn: proto, stack: make([]Value, 0, 256), env: global})
 
 	for {
 		f := vm.frames[len(vm.frames)-1]
@@ -122,6 +123,37 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 			a := f.pop()
 			f.push(BoolVal(a.Num > b.Num))
 
+		case OP_LE:
+			b := f.pop()
+			a := f.pop()
+			f.push(BoolVal(a.Num <= b.Num))
+
+		case OP_GE:
+			b := f.pop()
+			a := f.pop()
+			f.push(BoolVal(a.Num >= b.Num))
+
+		case OP_NE:
+			b := f.pop()
+			a := f.pop()
+			f.push(BoolVal(a.Num != b.Num))
+
+		case OP_LEN:
+			arr := f.pop()
+			if arr.Type != ValArray {
+				panic("expected an array")
+			}
+
+			f.push(NumVal(float64(len(arr.Arr.Elements))))
+
+		case OP_ISNIL:
+			v := f.pop()
+			f.push(BoolVal(v.Type == ValNil))
+
+		case OP_NOT:
+			a := f.pop()
+			f.push(BoolVal(!a.Truthy()))
+
 		case OP_LOAD:
 			name := f.fn.Chunk.Names[operand]
 			v, ok := f.env.Get(name)
@@ -151,19 +183,33 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 				args[i] = f.pop()
 			}
 			callee := f.pop()
-			if callee.Type != ValFunction {
+			switch callee.Type {
+			case ValBuiltin:
+				result := callee.Builtin.Fn(args)
+				f.push(result)
+			case ValFunction:
+				fn := callee.Fn
+				if nargs > len(fn.Params) {
+					panic(fmt.Sprintf("expected at most %d args, got %d", len(fn.Params), nargs))
+				}
+
+				if nargs < fn.HardArity {
+					panic(fmt.Sprintf("expected at least %d args, got %d", fn.HardArity, nargs))
+				}
+
+				for i := 0; i < len(fn.Params) - fn.HardArity; i += 1 {
+					args = append(args, NilVal())
+				}
+
+				env := NewEnv(fn.Env)
+				for i, p := range fn.Params {
+					env.SetLocal(p, args[i])
+				}
+				nf := &Frame{fn: fn, stack: make([]Value, 0, 64), env: env}
+				vm.frames = append(vm.frames, nf)
+			default:
 				panic("not callable")
 			}
-			fn := callee.Fn
-			if nargs != len(fn.Params) {
-				panic(fmt.Sprintf("expected %d args, got %d", len(fn.Params), nargs))
-			}
-			env := NewEnv(fn.Env)
-			for i, p := range fn.Params {
-				env.SetLocal(p, args[i])
-			}
-			nf := &Frame{fn: fn, stack: make([]Value, 0, 64), env: env}
-			vm.frames = append(vm.frames, nf)
 
 		case OP_RET:
 			ret := f.pop()
@@ -176,8 +222,53 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 
 		case OP_MKFN:
 			tmpl := f.fn.Chunk.Constants[operand].Fn
-			fn := &FuncValue{Name: tmpl.Name, Chunk: tmpl.Chunk, Params: tmpl.Params, Env: f.env}
-			f.push(FnVal(fn))
+			// fn := &FuncValue{
+			// 	Name:      tmpl.Name,
+			// 	Chunk:     tmpl.Chunk,
+			// 	Params:    tmpl.Params,
+			// 	HardArity: tmpl.HardArity,
+			// 	Env:       f.env,
+			// }
+			tmp := *tmpl
+			tmp.Env = f.env
+			f.push(FnVal(&tmp))
+
+		case OP_ARRAY:
+			elems := make([]Value, operand)
+			for i := operand - 1; i >= 0; i-- {
+				elems[i] = f.pop()
+			}
+			f.push(ArrVal(&ArrayValue{Elements: elems}))
+
+		case OP_INDEX:
+			index := f.pop()
+			arr := f.pop()
+			if arr.Type != ValArray {
+				panic("index expects an array")
+			}
+			if index.Type != ValNumber {
+				panic("index expects a number")
+			}
+			i := int(index.Num)
+			if i >= len(arr.Arr.Elements) {
+				panic(fmt.Sprintf("index out of bounds: %d (len %d)", i, len(arr.Arr.Elements)))
+			}
+			if i < 0 {
+				f.push(arr.Arr.Elements[len(arr.Arr.Elements) + i])
+			} else {
+				f.push(arr.Arr.Elements[i])
+			}
+
+		case OP_CONCAT:
+			b := f.pop()
+			a := f.pop()
+			if a.Type != ValArray || b.Type != ValArray {
+				panic("++ expects arrays")
+			}
+			elems := make([]Value, len(a.Arr.Elements)+len(b.Arr.Elements))
+			copy(elems, a.Arr.Elements)
+			copy(elems[len(a.Arr.Elements):], b.Arr.Elements)
+			f.push(ArrVal(&ArrayValue{Elements: elems}))
 
 		default:
 			panic(fmt.Sprintf("unknown opcode %d", op))

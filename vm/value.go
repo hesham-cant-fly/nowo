@@ -1,6 +1,9 @@
 package vm
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type ValueType byte
 
@@ -8,30 +11,48 @@ const (
 	ValNil ValueType = iota
 	ValNumber
 	ValFunction
+	ValBuiltin
+	ValArray
 )
 
 type FuncValue struct {
-	Name   string
-	Chunk  *Chunk
-	Params []string
-	Env    *Environment
+	Name      string
+	Chunk     *Chunk
+	HardArity int
+	Params    []string
+	Env       *Environment
+}
+
+type BuiltinFunc func(args []Value) Value
+
+type BuiltinValue struct {
+	Name string
+	Fn   BuiltinFunc
+}
+
+type ArrayValue struct {
+	Elements []Value
 }
 
 type Value struct {
-	Type ValueType
-	Num  float64
-	Fn   *FuncValue
+	Type    ValueType
+	Num     float64
+	Fn      *FuncValue
+	Builtin *BuiltinValue
+	Arr     *ArrayValue
 }
 
-func NilVal() Value             { return Value{Type: ValNil} }
+func NilVal() Value { return Value{Type: ValNil} }
 func BoolVal(b bool) Value {
 	if b {
 		return NumVal(1)
 	}
 	return NumVal(0)
 }
-func NumVal(n float64) Value    { return Value{Type: ValNumber, Num: n} }
-func FnVal(fn *FuncValue) Value { return Value{Type: ValFunction, Fn: fn} }
+func NumVal(n float64) Value           { return Value{Type: ValNumber, Num: n} }
+func FnVal(fn *FuncValue) Value        { return Value{Type: ValFunction, Fn: fn} }
+func BuiltinVal(b *BuiltinValue) Value { return Value{Type: ValBuiltin, Builtin: b} }
+func ArrVal(a *ArrayValue) Value       { return Value{Type: ValArray, Arr: a} }
 
 func (v Value) String() string {
 	switch v.Type {
@@ -41,6 +62,19 @@ func (v Value) String() string {
 		return fmt.Sprintf("%g", v.Num)
 	case ValFunction:
 		return fmt.Sprintf("<fn %s>", v.Fn.Name)
+	case ValBuiltin:
+		return fmt.Sprintf("<builtin %s>", v.Builtin.Name)
+	case ValArray:
+		var b strings.Builder
+		b.WriteByte('[')
+		for i, e := range v.Arr.Elements {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(e.String())
+		}
+		b.WriteByte(']')
+		return b.String()
 	default:
 		return "?"
 	}
@@ -87,4 +121,23 @@ func (e *Environment) Set(name string, val Value) {
 
 func (e *Environment) SetLocal(name string, val Value) {
 	e.vars[name] = val
+}
+
+func StdEnv() *Environment {
+	env := NewEnv(nil)
+	env.SetLocal("nil", NilVal())
+	env.SetLocal("print", BuiltinVal(&BuiltinValue{
+		Name: "print",
+		Fn: func(args []Value) Value {
+			for i, arg := range args {
+				if i > 0 {
+					fmt.Print(" ")
+				}
+				fmt.Print(arg)
+			}
+			fmt.Println()
+			return NilVal()
+		},
+	}))
+	return env
 }

@@ -76,6 +76,34 @@ type AstCall struct {
 	Args   []Ast
 }
 
+type AstArray struct {
+	Elements []Ast
+}
+
+func (n AstArray) FormatAst(indent string) string {
+	var b strings.Builder
+	b.WriteString("Array\n")
+	for i, elem := range n.Elements {
+		prefix := "├─ "
+		childPrefix := indent + "│  "
+		if i == len(n.Elements)-1 {
+			prefix = "└─ "
+			childPrefix = indent + "   "
+		}
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(indent + prefix)
+		b.WriteString(formatAst(elem, childPrefix))
+	}
+	return b.String()
+}
+
+type AstSubscript struct {
+	Array Ast `ast:"child"`
+	Index Ast `ast:"child"`
+}
+
 type AstNumber struct {
 	Value string
 }
@@ -315,6 +343,20 @@ func tokenSymbol(kind lexer.TokenKind) string {
 		return "*"
 	case lexer.SLASH:
 		return "/"
+	case lexer.LESS_EQ:
+		return "<="
+	case lexer.GREATER_EQ:
+		return ">="
+	case lexer.BANG_EQ:
+		return "!="
+	case lexer.EXCLAMATION_MARK:
+		return "!"
+	case lexer.PLUS_PLUS:
+		return "++"
+	case lexer.OPEN_BRACKET:
+		return "["
+	case lexer.CLOSE_BRACKET:
+		return "]"
 	default:
 		return fmt.Sprintf("TK(%d)", kind)
 	}

@@ -23,7 +23,12 @@ func Tokenize(input string) []Token {
 
 		switch c {
 		case '+':
-			tokens = append(tokens, s.makeToken(PLUS))
+			if s.peek() == '+' {
+				s.advance()
+				tokens = append(tokens, s.makeToken(PLUS_PLUS))
+			} else {
+				tokens = append(tokens, s.makeToken(PLUS))
+			}
 		case '-':
 			if s.peek() == '-' {
 				for !s.isAtEnd() && s.peek() != '\n' {
@@ -32,14 +37,27 @@ func Tokenize(input string) []Token {
 			} else {
 				tokens = append(tokens, s.makeToken(MINUS))
 			}
-		case '*': tokens = append(tokens, s.makeToken(STAR))
-		case '/': tokens = append(tokens, s.makeToken(SLASH))
-		case '(': tokens = append(tokens, s.makeToken(OPEN_PAREN))
-		case ')': tokens = append(tokens, s.makeToken(CLOSE_PAREN))
-		case '{': tokens = append(tokens, s.makeToken(OPEN_BRACE))
-		case '}': tokens = append(tokens, s.makeToken(CLOSE_BRACE))
-		case '?': tokens = append(tokens, s.makeToken(QUESTION_MARK))
-		case '!': tokens = append(tokens, s.makeToken(EXCLAMATION_MARK))
+		case '*':
+			tokens = append(tokens, s.makeToken(STAR))
+		case '/':
+			tokens = append(tokens, s.makeToken(SLASH))
+		case '(':
+			tokens = append(tokens, s.makeToken(OPEN_PAREN))
+		case ')':
+			tokens = append(tokens, s.makeToken(CLOSE_PAREN))
+		case '{':
+			tokens = append(tokens, s.makeToken(OPEN_BRACE))
+		case '}':
+			tokens = append(tokens, s.makeToken(CLOSE_BRACE))
+		case '?':
+			tokens = append(tokens, s.makeToken(QUESTION_MARK))
+		case '!':
+			if s.peek() == '=' {
+				s.advance()
+				tokens = append(tokens, s.makeToken(BANG_EQ))
+			} else {
+				tokens = append(tokens, s.makeToken(EXCLAMATION_MARK))
+			}
 		case '=':
 			if s.peek() == '=' {
 				s.advance()
@@ -47,12 +65,39 @@ func Tokenize(input string) []Token {
 			} else {
 				tokens = append(tokens, s.makeToken(EQ))
 			}
-		case '<': tokens = append(tokens, s.makeToken(LESS))
-		case '>': tokens = append(tokens, s.makeToken(GREATER))
-		case ':': tokens = append(tokens, s.makeToken(COLON))
-		case ',': tokens = append(tokens, s.makeToken(COMMA))
-		case ';': tokens = append(tokens, s.makeToken(SEMICOLON))
-		case '.': tokens = append(tokens, s.makeToken(DOT))
+		case '<':
+			if s.peek() == '=' {
+				s.advance()
+				tokens = append(tokens, s.makeToken(LESS_EQ))
+			} else {
+				tokens = append(tokens, s.makeToken(LESS))
+			}
+		case '>':
+			if s.peek() == '=' {
+				s.advance()
+				tokens = append(tokens, s.makeToken(GREATER_EQ))
+			} else {
+				tokens = append(tokens, s.makeToken(GREATER))
+			}
+		case ':':
+			if s.peek() == '=' {
+				s.advance()
+				tokens = append(tokens, s.makeToken(COLON_EQ))
+			} else {
+				tokens = append(tokens, s.makeToken(COLON))
+			}
+		case ',':
+			tokens = append(tokens, s.makeToken(COMMA))
+		case ';':
+			tokens = append(tokens, s.makeToken(SEMICOLON))
+		case '#':
+			tokens = append(tokens, s.makeToken(HASHTAG))
+		case '[':
+			tokens = append(tokens, s.makeToken(OPEN_BRACKET))
+		case ']':
+			tokens = append(tokens, s.makeToken(CLOSE_BRACKET))
+		case '.':
+			tokens = append(tokens, s.makeToken(DOT))
 		default:
 			if isAlpha(c) {
 				tokens = append(tokens, s.identifier())

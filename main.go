@@ -8,7 +8,13 @@ import (
 )
 
 func main() {
-	src := readEntireFile("example.nowo")
+	userArgs := os.Args[1:]
+	if len(userArgs) == 0 {
+		fmt.Println("specify a file to run")
+		return
+	}
+
+	src := readEntireFile(userArgs[0])
 
 	comp, err := vm.Compile(src)
 	if err != nil {
@@ -20,12 +26,12 @@ func main() {
 	// fmt.Println()
 	// fmt.Print(comp.Chunk().Disassemble())
 
-	result, err := comp.Run()
+	_, err = comp.Run()
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
 	}
-	fmt.Println("=>", result)
+	// fmt.Println("=>", result)
 }
 
 func readEntireFile(path string) string {

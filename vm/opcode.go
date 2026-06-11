@@ -18,6 +18,12 @@ const (
 	OP_EQ
 	OP_LT
 	OP_GT
+	OP_LE
+	OP_GE
+	OP_NE
+	OP_ISNIL
+	OP_NOT
+	OP_LEN
 	OP_LOAD
 	OP_STORE
 	OP_JMP
@@ -25,6 +31,9 @@ const (
 	OP_CALL
 	OP_RET
 	OP_MKFN
+	OP_ARRAY
+	OP_INDEX
+	OP_CONCAT
 )
 
 type Instruction uint32
@@ -40,10 +49,11 @@ func OpName(op Opcode) string {
 	names := []string{
 		"NIL", "TRUE", "FALSE", "CONST", "POP",
 		"ADD", "SUB", "MUL", "DIV", "NEG",
-		"EQ", "LT", "GT",
-		"LOAD", "STORE",
+		"EQ", "LT", "GT", "LE", "GE", "NE", "ISNIL", "NOT",
+		"LEN", "LOAD", "STORE",
 		"JMP", "JIF",
 		"CALL", "RET", "MKFN",
+		"ARRAY", "INDEX", "CONCAT",
 	}
 	if int(op) < len(names) {
 		return names[op]

@@ -77,7 +77,7 @@ func (c *Chunk) disassemble(indent string) string {
 		case OP_JMP, OP_JIF:
 			target := i + 1 + operand
 			fmt.Fprintf(&b, "%-6s %d (-> %d)\n", OpName(op), operand, target)
-		case OP_CALL, OP_MKFN:
+		case OP_CALL, OP_MKFN, OP_ARRAY:
 			fmt.Fprintf(&b, "%-6s %d\n", OpName(op), operand)
 		default:
 			fmt.Fprintf(&b, "%s\n", OpName(op))

@@ -1,7 +1,53 @@
+inc := (x) x + 1
 
-fib := (x)
-	x < 2
-	  ? 1
-	  ! fib(x - 1) + fib(x - 2)
+add := (a, b) a + b
 
-fib(12)
+append := (xs, x) xs ++ .[x]
+
+isodd := (n)
+  n == 0 ? 0 !
+  n == 1 ? 1 !
+  n == 2 ? 0 !
+  n == 3 ? 1 !
+  isodd(n - 4)
+
+iseven := (n) !isodd(n)
+
+fact := (x)
+	x == 1 ? x ! 
+	x * fact(x - 1)
+
+genList := (trans_fn, inc_fn, check_fn)
+  acc := {(i, trans_fn, inc_fn, check_fn, result)
+    !check_fn(i) ? result !
+    res := trans_fn(i);
+    acc(inc_fn(i), trans_fn, inc_fn, check_fn, result:append(res))};
+  acc(0, trans_fn, inc_fn, check_fn, .[])
+
+map := (arr, fn)
+  acc := {(arr, fn, i, result)
+    i >= #arr ? result !
+    res := fn(arr[i]);
+    acc(arr, fn, i + 1, result:append(res))};
+  acc(arr, fn, 0, .[])
+
+filter := (arr, fn)
+  acc := {(arr, fn, i, result)
+    i >= #arr  ? result !
+    fn(arr[i]) ? acc(arr, fn, i + 1, result:append(arr[i])) !
+    acc(arr, fn, i + 1, result)};
+  acc(arr, fn, 0, .[])
+
+reduce := (arr, fn, starter, i = 0)
+  i >= #arr ? starter !
+  reduce(arr, fn, fn(starter, arr[i]), i + 1)
+
+items := genList((x) x, inc, (i) i < 5)
+
+items
+  :map((x) x + 1)
+  :filter(iseven)
+  :reduce(add, 0)
+  :fact()
+  :print()
+

@@ -20,7 +20,7 @@ func Compile(src string) (*Compiler, error) {
 		return nil, err
 	}
 
-	bc := &bytecodeCompiler{chunk: NewChunk("main"), env: NewEnv(nil)}
+	bc := &bytecodeCompiler{chunk: NewChunk("main"), env: StdEnv()}
 	for i, node := range ast.Nodes {
 		bc.compileExpr(node)
 		if i < len(ast.Nodes)-1 {
@@ -60,19 +60,38 @@ func (c *bytecodeCompiler) compileExpr(node parser.Ast) {
 		switch n.Op {
 		case lexer.MINUS:
 			c.chunk.EmitSimple(OP_NEG)
+		case lexer.EXCLAMATION_MARK:
+			c.chunk.EmitSimple(OP_NOT)
+		case lexer.HASHTAG:
+			c.chunk.EmitSimple(OP_LEN)
 		}
 
 	case parser.AstBinary:
 		c.compileExpr(n.Lhs)
 		c.compileExpr(n.Rhs)
 		switch n.Op {
-		case lexer.EQEQ:    c.chunk.EmitSimple(OP_EQ)
-		case lexer.LESS:    c.chunk.EmitSimple(OP_LT)
-		case lexer.GREATER: c.chunk.EmitSimple(OP_GT)
-		case lexer.PLUS:    c.chunk.EmitSimple(OP_ADD)
-		case lexer.MINUS:   c.chunk.EmitSimple(OP_SUB)
-		case lexer.STAR:    c.chunk.EmitSimple(OP_MUL)
-		case lexer.SLASH:   c.chunk.EmitSimple(OP_DIV)
+		case lexer.EQEQ:
+			c.chunk.EmitSimple(OP_EQ)
+		case lexer.LESS:
+			c.chunk.EmitSimple(OP_LT)
+		case lexer.GREATER:
+			c.chunk.EmitSimple(OP_GT)
+		case lexer.LESS_EQ:
+			c.chunk.EmitSimple(OP_LE)
+		case lexer.GREATER_EQ:
+			c.chunk.EmitSimple(OP_GE)
+		case lexer.BANG_EQ:
+			c.chunk.EmitSimple(OP_NE)
+		case lexer.PLUS:
+			c.chunk.EmitSimple(OP_ADD)
+		case lexer.MINUS:
+			c.chunk.EmitSimple(OP_SUB)
+		case lexer.STAR:
+			c.chunk.EmitSimple(OP_MUL)
+		case lexer.SLASH:
+			c.chunk.EmitSimple(OP_DIV)
+		case lexer.PLUS_PLUS:
+			c.chunk.EmitSimple(OP_CONCAT)
 		}
 
 	case parser.AstTernary:
@@ -83,10 +102,10 @@ func (c *bytecodeCompiler) compileExpr(node parser.Ast) {
 		endJmp := len(c.chunk.Code)
 		c.chunk.Emit(OP_JMP, 0)
 
-		c.chunk.Code[elseJmp] = MakeInst(OP_JIF, len(c.chunk.Code) - (elseJmp + 1))
+		c.chunk.Code[elseJmp] = MakeInst(OP_JIF, len(c.chunk.Code)-(elseJmp+1))
 
 		c.compileExpr(n.Else)
-		c.chunk.Code[endJmp] = MakeInst(OP_JMP, len(c.chunk.Code) - (endJmp + 1))
+		c.chunk.Code[endJmp] = MakeInst(OP_JMP, len(c.chunk.Code)-(endJmp+1))
 
 	case parser.AstGrouping:
 		c.compileExpr(n.Child)
@@ -131,6 +150,17 @@ func (c *bytecodeCompiler) compileExpr(node parser.Ast) {
 		}
 		c.chunk.Emit(OP_CALL, len(n.Args))
 
+	case parser.AstArray:
+		for _, elem := range n.Elements {
+			c.compileExpr(elem)
+		}
+		c.chunk.Emit(OP_ARRAY, len(n.Elements))
+
+	case parser.AstSubscript:
+		c.compileExpr(n.Array)
+		c.compileExpr(n.Index)
+		c.chunk.EmitSimple(OP_INDEX)
+
 	case parser.AstFunction:
 		fnName := c.funcName
 		if fnName == "" {
@@ -138,16 +168,32 @@ func (c *bytecodeCompiler) compileExpr(node parser.Ast) {
 		}
 		fnChunk := NewChunk(fnName)
 		fnCompiler := &bytecodeCompiler{chunk: fnChunk, env: c.env, funcName: fnName}
+		hardArity := 0
 
 		for _, arg := range n.Args {
-			fnChunk.AddName(arg.Name)
+			nm := fnChunk.AddName(arg.Name)
+
+			if arg.DefaultValue != nil {
+				fnChunk.Emit(OP_LOAD, nm)
+				fnChunk.EmitSimple(OP_ISNIL)
+				elseJmp := len(fnChunk.Code)
+				fnChunk.Emit(OP_JIF, 0)
+				fnCompiler.compileExpr(arg.DefaultValue)
+				fnChunk.Emit(OP_STORE, nm)
+
+				fnChunk.Code[elseJmp] = MakeInst(OP_JIF, len(fnChunk.Code)-(elseJmp+1))
+				continue
+			}
+			hardArity += 1
 		}
+
 		fnCompiler.compileExpr(n.Body)
 		fnChunk.EmitSimple(OP_RET)
 
 		proto := &FuncValue{
 			Name:   fnName,
 			Chunk:  fnChunk,
+			HardArity: hardArity,
 			Params: paramNames(n.Args),
 		}
 		idx := c.chunk.AddConst(FnVal(proto))
