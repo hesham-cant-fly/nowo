@@ -1,10 +1,11 @@
 package lexer
 
 type scanner struct {
-	input   string
-	start   int
-	current int
-	line    int
+	input       string
+	start       int
+	current     int
+	line        int
+	lastNewline int
 }
 
 func Tokenize(input string) []Token {
@@ -142,7 +143,10 @@ func (s *scanner) skipWhitespace() {
 			s.advance()
 		case '\n':
 			s.line++
+			s.lastNewline = s.current
 			s.advance()
+		case 0:
+			return
 		default:
 			return
 		}
@@ -178,6 +182,7 @@ func (s *scanner) makeToken(kind TokenKind) Token {
 		Kind:  kind,
 		Lexem: s.input[s.start:s.current],
 		Line:  s.line,
+		Col:   s.start - s.lastNewline,
 	}
 }
 

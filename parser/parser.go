@@ -1,8 +1,8 @@
 package parser
 
 import (
-	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/hesham-cant-fly/haste-lang/lexer"
 )
@@ -17,6 +17,21 @@ type rule struct {
 	infix      infixFn
 	prec       int
 	rightAssoc bool
+}
+
+type ParseError struct {
+	Line    int
+	Col     int
+	Message string
+	LineSrc string
+}
+
+func (e ParseError) Error() string {
+	if e.LineSrc == "" {
+		return fmt.Sprintf("line %d: %s", e.Line, e.Message)
+	}
+	pointer := strings.Repeat(" ", e.Col-1) + "^--- " + e.Message
+	return fmt.Sprintf("  %d | %s\n    | %s", e.Line, e.LineSrc, pointer)
 }
 
 const (
@@ -40,29 +55,53 @@ type parser struct {
 	tokens   []lexer.Token
 	current  int
 	previous lexer.Token
-	hasError bool
+	src      string
+	lines    []string
+	errs     []ParseError
 }
 
-func Parse(tokens []lexer.Token) (AstProgram, error) {
-	p := &parser{tokens: tokens}
+func Parse(src string, tokens []lexer.Token) (AstProgram, error) {
+	p := &parser{
+		tokens: tokens,
+		src:    src,
+		lines:  strings.Split(src, "\n"),
+	}
 	var program []Ast
 
 	for !p.ended() {
 		node, err := p.parseNode()
 		if err != nil {
-			fmt.Println(err)
-			p.hasError = true
 			p.advance()
 			continue
 		}
 		program = append(program, node)
 	}
 
-	if p.hasError {
-		return AstProgram{}, errors.New("Cannot parse this source code")
+	if len(p.errs) > 0 {
+		var b strings.Builder
+		for i, e := range p.errs {
+			if i > 0 {
+				b.WriteByte('\n')
+			}
+			b.WriteString(e.Error())
+		}
+		return AstProgram{}, fmt.Errorf("%s", b.String())
 	}
 
 	return AstProgram{Nodes: program}, nil
+}
+
+func (p *parser) err(tok lexer.Token, msg string, args ...any) {
+	lineSrc := ""
+	if tok.Line > 0 && tok.Line <= len(p.lines) {
+		lineSrc = p.lines[tok.Line-1]
+	}
+	p.errs = append(p.errs, ParseError{
+		Line:    tok.Line,
+		Col:     tok.Col,
+		Message: fmt.Sprintf(msg, args...),
+		LineSrc: lineSrc,
+	})
 }
 
 func (p *parser) parseNode() (Ast, error) {
@@ -98,7 +137,9 @@ func parseFunction(p *parser) (Ast, error) {
 	}
 
 	if !p.match(lexer.CLOSE_PAREN) {
-		return nil, errors.New("expected ) after parameters")
+		tok := p.peek()
+		p.err(tok, "expected ) after parameters, got %q", tok.Lexem)
+		return nil, fmt.Errorf("expected ) after parameters")
 	}
 
 	body, err := p.parseExpr(PREC_ASSIGN)
@@ -115,7 +156,8 @@ func (p *parser) parseArguments() ([]AstFunctionArg, error) {
 	for !p.check(lexer.CLOSE_PAREN) && !p.ended() {
 		tok := p.advance()
 		if tok.Kind != lexer.IDENT {
-			return nil, errors.New("expected parameter name")
+			p.err(tok, "expected parameter name, got %q", tok.Lexem)
+			return nil, fmt.Errorf("expected parameter name")
 		}
 
 		var defaultVal Ast
@@ -134,15 +176,17 @@ func (p *parser) parseArguments() ([]AstFunctionArg, error) {
 }
 
 func (p *parser) parseExpr(prec int) (Ast, error) {
-	if p.ended() {
-		return nil, errors.New("expected expression")
-	}
-
 	tok := p.advance()
+
+	if p.ended() && tok.Lexem == "" {
+		p.err(p.previous, "expected expression after %q", p.previous.Lexem)
+		return nil, fmt.Errorf("expected expression")
+	}
 
 	prefixRule := getRule(tok.Kind).prefix
 	if prefixRule == nil {
-		return nil, fmt.Errorf("expected expression, got '%s'", tok.Lexem)
+		p.err(tok, "expected expression, got %q", tok.Lexem)
+		return nil, fmt.Errorf("expected expression, got %q", tok.Lexem)
 	}
 
 	left, err := prefixRule(p)
@@ -234,7 +278,8 @@ func parseBinding(p *parser, lhs Ast) (Ast, error) {
 
 func parseDecl(p *parser, lhs Ast) (Ast, error) {
 	if _, ok := lhs.(AstIdentifier); !ok {
-		return nil, fmt.Errorf("Expected an identifier here")
+		p.err(p.previous, "expected identifier for declaration, got %q", p.previous.Lexem)
+		return nil, fmt.Errorf("expected identifier")
 	}
 
 	value, err := p.parseExpr(PREC_ASSIGN)
@@ -264,6 +309,8 @@ func parsePipe(p *parser, lhs Ast) (Ast, error) {
 
 func parseArrayLiteral(p *parser) (Ast, error) {
 	if !p.match(lexer.OPEN_BRACKET) {
+		tok := p.peek()
+		p.err(tok, "expected '[' after '.', got %q", tok.Lexem)
 		return nil, fmt.Errorf("expected '[' after '.'")
 	}
 	var elements []Ast
@@ -275,11 +322,15 @@ func parseArrayLiteral(p *parser) (Ast, error) {
 		elements = append(elements, elem)
 		if !p.check(lexer.CLOSE_BRACKET) && !p.ended() {
 			if !p.match(lexer.COMMA) {
+				tok := p.peek()
+				p.err(tok, "expected ',' or ']' in array literal, got %q", tok.Lexem)
 				return nil, fmt.Errorf("expected ',' or ']' in array literal")
 			}
 		}
 	}
 	if !p.match(lexer.CLOSE_BRACKET) {
+		tok := p.peek()
+		p.err(tok, "expected ']' to close array literal, got %q", tok.Lexem)
 		return nil, fmt.Errorf("expected ']'")
 	}
 	return AstArray{Elements: elements}, nil
@@ -291,6 +342,8 @@ func parseSubscript(p *parser, lhs Ast) (Ast, error) {
 		return nil, err
 	}
 	if !p.match(lexer.CLOSE_BRACKET) {
+		tok := p.peek()
+		p.err(tok, "expected ']' after subscript, got %q", tok.Lexem)
 		return nil, fmt.Errorf("expected ']'")
 	}
 	return AstSubscript{Array: lhs, Index: index}, nil
@@ -310,7 +363,9 @@ func parseGrouped(p *parser) (Ast, error) {
 		return nil, err
 	}
 	if !p.match(lexer.CLOSE_BRACE) {
-		return nil, errors.New("expected }")
+		tok := p.peek()
+		p.err(tok, "expected } to close block, got %q", tok.Lexem)
+		return nil, fmt.Errorf("expected }")
 	}
 	return AstGrouping{Child: expr}, nil
 }
@@ -324,7 +379,9 @@ func parseTernary(p *parser, cond Ast) (Ast, error) {
 	}
 
 	if !p.match(lexer.EXCLAMATION_MARK) {
-		return nil, fmt.Errorf("Expected `!`")
+		tok := p.peek()
+		p.err(tok, "expected `!` for ternary else-branch, got %q", tok.Lexem)
+		return nil, fmt.Errorf("expected `!`")
 	}
 
 	else_, err := p.parseExpr(PREC_LOWEST)
@@ -385,7 +442,9 @@ func parseCall(p *parser, callee Ast) (Ast, error) {
 		}
 	}
 	if !p.match(lexer.CLOSE_PAREN) {
-		return nil, errors.New("expected ) after arguments")
+		tok := p.peek()
+		p.err(tok, "expected ) after arguments, got %q", tok.Lexem)
+		return nil, fmt.Errorf("expected ) after arguments")
 	}
 	return AstCall{Callee: callee, Args: args}, nil
 }

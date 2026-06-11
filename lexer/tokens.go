@@ -4,6 +4,7 @@ type Token struct {
 	Kind  TokenKind
 	Lexem string
 	Line  int
+	Col   int
 }
 
 type TokenKind int

@@ -30,33 +30,33 @@ single-pass scanner with no backtracking.
 | Token       | Lexeme          | Description            |
 |-------------+-----------------+------------------------|
 | =IDENT=     | =foo=, =x=, ... | Identifier             |
-| =INT=       | =42=            | Integer literal        |
+| =INT=       | =67=          | Integer literal        |
 | =FLOAT=     | =3.14=          | Float literal          |
 | =PLUS=      | =+=             | Addition               |
 | =MINUS=     | =-=             | Subtraction            |
 | =STAR=      | =*=             | Multiplication         |
 | =SLASH=     | =/=             | Division               |
-| =OPEN_PAREN=| =(=             | Left paren             |
-| =CLOSE_PAREN| =)=             | Right paren            |
+| =OPEN_PAREN= | =(=             | Left paren             |
+| =CLOSE_PAREN= | =)=             | Right paren            |
 | =OPEN_BRACE= | ={=           | Left brace (grouping)  |
-| =CLOSE_BRACE| =}=             | Right brace            |
-| =QUESTION_M| =?=             | Ternary then           |
-| =EXCLAMATIO| =!=             | Ternary else / unary   |
+| =CLOSE_BRACE= | =}=             | Right brace            |
+| =QUESTION_M= | =?=             | Ternary then           |
+| =EXCLAMATIO= | =!=             | Ternary else / unary   |
 | =EQ=        | ===             | Assign / default param |
 | =EQEQ=      | =====           | Equality comparison    |
 | =LESS=      | =<=             | Less than              |
 | =GREATER=   | =>=             | Greater than           |
 | =LESS_EQ=   | =<=             | Less or equal          |
-| =GREATER_EQ=| =>==            | Greater or equal       |
+| =GREATER_EQ= | =>==            | Greater or equal       |
 | =BANG_EQ=   | =!=             | Not equal              |
 | =COLON=     | =:=             | Pipe operator          |
-| =COLON_EQ=  | =:=             | Declaration            |
+| =COLON_EQ=  | =:==            | Declaration            |
 | =COMMA=     | =,=             | Separator              |
 | =SEMICOLON= | =;=             | Bind (sequencing)      |
 | =HASHTAG=   | =#=             | Length operator        |
 | =DOT=       | =.=             | Array literal prefix   |
-| =OPEN_BRACKE| =[=             | Subscript / array      |
-| =CLOSE_BRAC| =]=             | End subscript / array  |
+| =OPEN_BRACKE= | =[=             | Subscript / array      |
+| =CLOSE_BRAC= | =]=             | End subscript / array  |
 | =PLUS_PLUS= | =++=            | Array concatenation    |
 
 Comments start with =--= and extend to end of line (lexed as MINUS MINUS).

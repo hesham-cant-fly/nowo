@@ -1,6 +1,15 @@
 package vm
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
+
+type runtimeErr struct {
+	msg string
+	fn  string
+	ip  int
+}
 
 type Frame struct {
 	fn    *FuncValue
@@ -23,11 +32,33 @@ type VM struct {
 
 func New() *VM { return &VM{} }
 
+func (vm *VM) errorf(f *Frame, msg string, args ...any) {
+	panic(runtimeErr{
+		msg: fmt.Sprintf(msg, args...),
+		fn:  f.fn.Name,
+		ip:  f.ip - 1,
+	})
+}
+
+func (vm *VM) callStack() string {
+	var b strings.Builder
+	for i := len(vm.frames) - 1; i >= 0; i-- {
+		f := vm.frames[i]
+		fmt.Fprintf(&b, "\n  at %s() [ip=%d]", f.fn.Name, f.ip)
+	}
+	return b.String()
+}
+
 func (vm *VM) Run(main *Chunk) (result Value, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			result = NilVal()
-			err = fmt.Errorf("runtime error: %v", r)
+			switch e := r.(type) {
+			case runtimeErr:
+				err = fmt.Errorf("runtime error: %s%s", e.msg, vm.callStack())
+			default:
+				err = fmt.Errorf("runtime error: %v", r)
+			}
 		}
 	}()
 
@@ -66,7 +97,7 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 			b := f.pop()
 			a := f.pop()
 			if a.Type != ValNumber || b.Type != ValNumber {
-				panic("+ expects numbers")
+				vm.errorf(f, "+ expects numbers, got %s and %s", a, b)
 			}
 			f.push(NumVal(a.Num + b.Num))
 
@@ -74,7 +105,7 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 			b := f.pop()
 			a := f.pop()
 			if a.Type != ValNumber || b.Type != ValNumber {
-				panic("- expects numbers")
+				vm.errorf(f, "- expects numbers, got %s and %s", a, b)
 			}
 			f.push(NumVal(a.Num - b.Num))
 
@@ -82,7 +113,7 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 			b := f.pop()
 			a := f.pop()
 			if a.Type != ValNumber || b.Type != ValNumber {
-				panic("* expects numbers")
+				vm.errorf(f, "* expects numbers, got %s and %s", a, b)
 			}
 			f.push(NumVal(a.Num * b.Num))
 
@@ -90,28 +121,24 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 			b := f.pop()
 			a := f.pop()
 			if a.Type != ValNumber || b.Type != ValNumber {
-				panic("/ expects numbers")
+				vm.errorf(f, "/ expects numbers, got %s and %s", a, b)
 			}
 			if b.Num == 0 {
-				panic("division by zero")
+				vm.errorf(f, "division by zero")
 			}
 			f.push(NumVal(a.Num / b.Num))
 
 		case OP_NEG:
 			a := f.pop()
 			if a.Type != ValNumber {
-				panic("- expects a number")
+				vm.errorf(f, "- expects a number, got %s", a)
 			}
 			f.push(NumVal(-a.Num))
 
 		case OP_EQ:
 			b := f.pop()
 			a := f.pop()
-			if a.Num == b.Num {
-				f.push(NumVal(1))
-			} else {
-				f.push(NumVal(0))
-			}
+			f.push(BoolVal(a.Num == b.Num))
 
 		case OP_LT:
 			b := f.pop()
@@ -141,9 +168,8 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 		case OP_LEN:
 			arr := f.pop()
 			if arr.Type != ValArray {
-				panic("expected an array")
+				vm.errorf(f, "# expects an array, got %s", arr)
 			}
-
 			f.push(NumVal(float64(len(arr.Arr.Elements))))
 
 		case OP_ISNIL:
@@ -158,7 +184,7 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 			name := f.fn.Chunk.Names[operand]
 			v, ok := f.env.Get(name)
 			if !ok {
-				panic(fmt.Sprintf("undefined variable %q", name))
+				vm.errorf(f, "undefined variable %q", name)
 			}
 			f.push(v)
 
@@ -190,17 +216,14 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 			case ValFunction:
 				fn := callee.Fn
 				if nargs > len(fn.Params) {
-					panic(fmt.Sprintf("expected at most %d args, got %d", len(fn.Params), nargs))
+					vm.errorf(f, "expected at most %d args to %s(), got %d", len(fn.Params), fn.Name, nargs)
 				}
-
 				if nargs < fn.HardArity {
-					panic(fmt.Sprintf("expected at least %d args, got %d", fn.HardArity, nargs))
+					vm.errorf(f, "expected at least %d args to %s(), got %d", fn.HardArity, fn.Name, nargs)
 				}
-
-				for i := 0; i < len(fn.Params) - fn.HardArity; i += 1 {
+				for i := 0; i < len(fn.Params)-fn.HardArity; i++ {
 					args = append(args, NilVal())
 				}
-
 				env := NewEnv(fn.Env)
 				for i, p := range fn.Params {
 					env.SetLocal(p, args[i])
@@ -208,7 +231,7 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 				nf := &Frame{fn: fn, stack: make([]Value, 0, 64), env: env}
 				vm.frames = append(vm.frames, nf)
 			default:
-				panic("not callable")
+				vm.errorf(f, "not callable: %s", callee)
 			}
 
 		case OP_RET:
@@ -244,17 +267,17 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 			index := f.pop()
 			arr := f.pop()
 			if arr.Type != ValArray {
-				panic("index expects an array")
+				vm.errorf(f, "index expects an array, got %s", arr)
 			}
 			if index.Type != ValNumber {
-				panic("index expects a number")
+				vm.errorf(f, "index expects a number, got %s", index)
 			}
 			i := int(index.Num)
 			if i >= len(arr.Arr.Elements) {
-				panic(fmt.Sprintf("index out of bounds: %d (len %d)", i, len(arr.Arr.Elements)))
+				vm.errorf(f, "index out of bounds: %d (len %d)", i, len(arr.Arr.Elements))
 			}
 			if i < 0 {
-				f.push(arr.Arr.Elements[len(arr.Arr.Elements) + i])
+				f.push(arr.Arr.Elements[len(arr.Arr.Elements)+i])
 			} else {
 				f.push(arr.Arr.Elements[i])
 			}
@@ -263,7 +286,7 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 			b := f.pop()
 			a := f.pop()
 			if a.Type != ValArray || b.Type != ValArray {
-				panic("++ expects arrays")
+				vm.errorf(f, "++ expects arrays, got %s and %s", a, b)
 			}
 			elems := make([]Value, len(a.Arr.Elements)+len(b.Arr.Elements))
 			copy(elems, a.Arr.Elements)
@@ -271,7 +294,7 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 			f.push(ArrVal(&ArrayValue{Elements: elems}))
 
 		default:
-			panic(fmt.Sprintf("unknown opcode %d", op))
+			vm.errorf(f, "unknown opcode %d", op)
 		}
 	}
 

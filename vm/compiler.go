@@ -15,7 +15,7 @@ type Compiler struct {
 
 func Compile(src string) (*Compiler, error) {
 	tokens := lexer.Tokenize(src)
-	ast, err := parser.Parse(tokens)
+	ast, err := parser.Parse(src, tokens)
 	if err != nil {
 		return nil, err
 	}
@@ -191,10 +191,10 @@ func (c *bytecodeCompiler) compileExpr(node parser.Ast) {
 		fnChunk.EmitSimple(OP_RET)
 
 		proto := &FuncValue{
-			Name:   fnName,
-			Chunk:  fnChunk,
+			Name:      fnName,
+			Chunk:     fnChunk,
 			HardArity: hardArity,
-			Params: paramNames(n.Args),
+			Params:    paramNames(n.Args),
 		}
 		idx := c.chunk.AddConst(FnVal(proto))
 		c.chunk.Emit(OP_MKFN, idx)
