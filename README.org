@@ -1,0 +1,23 @@
+#+title: NOWO programming language
+
+NOWO (stands for "NO keyWOrd"). is a functional programming language without even a single reserve word. EVERYTHING in this language is an expression. making it possible to write expressive (and ugly) code.
+
+#+begin_src nowo
+-- `print` is a built-in. however, you can override it
+print("Hello, World")
+
+fib := (x)
+  x <= 1 ? 1 !
+  fib(x - 1) + fib(x - 2)
+
+-- `:` is the pipe operator
+10:fib():print()
+
+-- {} is for grouping (similar to parenthesis in C)
+print({1 + 2} * 3)
+
+-- `;` is actually an operator. its similar to `,` in C. except that the order of execution is actually defined
+print(x := 1; x + 1)
+
+-- also `x := 1` is an expression as well :0
+#+end_src
