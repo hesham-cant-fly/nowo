@@ -31,7 +31,7 @@ x = 10            -- reassign
 
 *** Arithmetic
 
-=+ = -= *= /= ++= work as expected. =++= concatenates arrays.
+=+= =-= =*= =/= work as expected. =++= concatenates arrays.
 
 #+begin_src nowo
 1 + 2 * 3         -- => 7 (standard precedence)
@@ -40,7 +40,7 @@ x = 10            -- reassign
 
 *** Comparison
 
-= == == != < > <= >= = all return 1 (true) or 0 (false).
+==== ==!= =<= =>= =<== =>== all return 1 (true) or 0 (false).
 
 *** Functions
 

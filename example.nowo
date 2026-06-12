@@ -50,4 +50,3 @@ items
   :reduce(add, 0)
   :fact()
   :print()
-
