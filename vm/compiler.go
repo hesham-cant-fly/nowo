@@ -13,9 +13,9 @@ type Compiler struct {
 	chunk *Chunk
 }
 
-func Compile(src string) (*Compiler, error) {
+func Compile(file, src string) (*Compiler, error) {
 	tokens := lexer.Tokenize(src)
-	ast, err := parser.Parse(src, tokens)
+	ast, err := parser.Parse(file, src, tokens)
 	if err != nil {
 		return nil, err
 	}
@@ -24,10 +24,10 @@ func Compile(src string) (*Compiler, error) {
 	for i, node := range ast.Nodes {
 		bc.compileExpr(node)
 		if i < len(ast.Nodes)-1 {
-			bc.chunk.EmitSimple(OP_POP)
+			bc.chunk.EmitSimple(OP_POP, 0)
 		}
 	}
-	bc.chunk.EmitSimple(OP_RET)
+	bc.chunk.EmitSimple(OP_RET, 0)
 
 	return &Compiler{src: src, ast: ast, chunk: bc.chunk}, nil
 }
@@ -46,24 +46,58 @@ type bytecodeCompiler struct {
 	funcName string
 }
 
+func astLine(n parser.Ast) int {
+	switch v := n.(type) {
+	case parser.AstNumber:
+		return v.Line
+	case parser.AstIdentifier:
+		return v.Line
+	case parser.AstUnary:
+		return v.Line
+	case parser.AstBinary:
+		return v.Line
+	case parser.AstTernary:
+		return v.Line
+	case parser.AstGrouping:
+		return v.Line
+	case parser.AstBind:
+		return v.Line
+	case parser.AstDecl:
+		return v.Line
+	case parser.AstAssign:
+		return v.Line
+	case parser.AstCall:
+		return v.Line
+	case parser.AstArray:
+		return v.Line
+	case parser.AstSubscript:
+		return v.Line
+	case parser.AstFunction:
+		return v.Line
+	}
+	return 0
+}
+
 func (c *bytecodeCompiler) compileExpr(node parser.Ast) {
+	line := astLine(node)
+
 	switch n := node.(type) {
 	case parser.AstNumber:
 		val, _ := strconv.ParseFloat(n.Value, 64)
-		c.chunk.Emit(OP_CONST, c.chunk.AddConst(NumVal(val)))
+		c.chunk.Emit(OP_CONST, c.chunk.AddConst(NumVal(val)), line)
 
 	case parser.AstIdentifier:
-		c.chunk.Emit(OP_LOAD, c.chunk.AddName(n.Value()))
+		c.chunk.Emit(OP_LOAD, c.chunk.AddName(n.Value()), line)
 
 	case parser.AstUnary:
 		c.compileExpr(n.Rhs)
 		switch n.Op {
 		case lexer.MINUS:
-			c.chunk.EmitSimple(OP_NEG)
+			c.chunk.EmitSimple(OP_NEG, line)
 		case lexer.EXCLAMATION_MARK:
-			c.chunk.EmitSimple(OP_NOT)
+			c.chunk.EmitSimple(OP_NOT, line)
 		case lexer.HASHTAG:
-			c.chunk.EmitSimple(OP_LEN)
+			c.chunk.EmitSimple(OP_LEN, line)
 		}
 
 	case parser.AstBinary:
@@ -71,36 +105,36 @@ func (c *bytecodeCompiler) compileExpr(node parser.Ast) {
 		c.compileExpr(n.Rhs)
 		switch n.Op {
 		case lexer.EQEQ:
-			c.chunk.EmitSimple(OP_EQ)
+			c.chunk.EmitSimple(OP_EQ, line)
 		case lexer.LESS:
-			c.chunk.EmitSimple(OP_LT)
+			c.chunk.EmitSimple(OP_LT, line)
 		case lexer.GREATER:
-			c.chunk.EmitSimple(OP_GT)
+			c.chunk.EmitSimple(OP_GT, line)
 		case lexer.LESS_EQ:
-			c.chunk.EmitSimple(OP_LE)
+			c.chunk.EmitSimple(OP_LE, line)
 		case lexer.GREATER_EQ:
-			c.chunk.EmitSimple(OP_GE)
+			c.chunk.EmitSimple(OP_GE, line)
 		case lexer.BANG_EQ:
-			c.chunk.EmitSimple(OP_NE)
+			c.chunk.EmitSimple(OP_NE, line)
 		case lexer.PLUS:
-			c.chunk.EmitSimple(OP_ADD)
+			c.chunk.EmitSimple(OP_ADD, line)
 		case lexer.MINUS:
-			c.chunk.EmitSimple(OP_SUB)
+			c.chunk.EmitSimple(OP_SUB, line)
 		case lexer.STAR:
-			c.chunk.EmitSimple(OP_MUL)
+			c.chunk.EmitSimple(OP_MUL, line)
 		case lexer.SLASH:
-			c.chunk.EmitSimple(OP_DIV)
+			c.chunk.EmitSimple(OP_DIV, line)
 		case lexer.PLUS_PLUS:
-			c.chunk.EmitSimple(OP_CONCAT)
+			c.chunk.EmitSimple(OP_CONCAT, line)
 		}
 
 	case parser.AstTernary:
 		c.compileExpr(n.Cond)
 		elseJmp := len(c.chunk.Code)
-		c.chunk.Emit(OP_JIF, 0) // placeholder
+		c.chunk.Emit(OP_JIF, 0, line)
 		c.compileExpr(n.Then)
 		endJmp := len(c.chunk.Code)
-		c.chunk.Emit(OP_JMP, 0)
+		c.chunk.Emit(OP_JMP, 0, line)
 
 		c.chunk.Code[elseJmp] = MakeInst(OP_JIF, len(c.chunk.Code)-(elseJmp+1))
 
@@ -126,7 +160,7 @@ func (c *bytecodeCompiler) compileExpr(node parser.Ast) {
 		for i, expr := range exprs {
 			c.compileExpr(expr)
 			if i < len(exprs)-1 {
-				c.chunk.EmitSimple(OP_POP)
+				c.chunk.EmitSimple(OP_POP, line)
 			}
 		}
 
@@ -136,30 +170,30 @@ func (c *bytecodeCompiler) compileExpr(node parser.Ast) {
 		c.funcName = name
 		c.compileExpr(n.Value)
 		c.funcName = oldName
-		c.chunk.Emit(OP_STORE, c.chunk.AddName(name))
+		c.chunk.Emit(OP_STORE, c.chunk.AddName(name), line)
 
 	case parser.AstAssign:
 		c.compileExpr(n.Value)
 		name := n.Lhs.(parser.AstIdentifier).Value()
-		c.chunk.Emit(OP_STORE, c.chunk.AddName(name))
+		c.chunk.Emit(OP_STORE, c.chunk.AddName(name), line)
 
 	case parser.AstCall:
 		c.compileExpr(n.Callee)
 		for _, arg := range n.Args {
 			c.compileExpr(arg)
 		}
-		c.chunk.Emit(OP_CALL, len(n.Args))
+		c.chunk.Emit(OP_CALL, len(n.Args), line)
 
 	case parser.AstArray:
 		for _, elem := range n.Elements {
 			c.compileExpr(elem)
 		}
-		c.chunk.Emit(OP_ARRAY, len(n.Elements))
+		c.chunk.Emit(OP_ARRAY, len(n.Elements), line)
 
 	case parser.AstSubscript:
 		c.compileExpr(n.Array)
 		c.compileExpr(n.Index)
-		c.chunk.EmitSimple(OP_INDEX)
+		c.chunk.EmitSimple(OP_INDEX, line)
 
 	case parser.AstFunction:
 		fnName := c.funcName
@@ -174,12 +208,12 @@ func (c *bytecodeCompiler) compileExpr(node parser.Ast) {
 			nm := fnChunk.AddName(arg.Name)
 
 			if arg.DefaultValue != nil {
-				fnChunk.Emit(OP_LOAD, nm)
-				fnChunk.EmitSimple(OP_ISNIL)
+				fnChunk.Emit(OP_LOAD, nm, line)
+				fnChunk.EmitSimple(OP_ISNIL, line)
 				elseJmp := len(fnChunk.Code)
-				fnChunk.Emit(OP_JIF, 0)
+				fnChunk.Emit(OP_JIF, 0, line)
 				fnCompiler.compileExpr(arg.DefaultValue)
-				fnChunk.Emit(OP_STORE, nm)
+				fnChunk.Emit(OP_STORE, nm, line)
 
 				fnChunk.Code[elseJmp] = MakeInst(OP_JIF, len(fnChunk.Code)-(elseJmp+1))
 				continue
@@ -188,7 +222,7 @@ func (c *bytecodeCompiler) compileExpr(node parser.Ast) {
 		}
 
 		fnCompiler.compileExpr(n.Body)
-		fnChunk.EmitSimple(OP_RET)
+		fnChunk.EmitSimple(OP_RET, line)
 
 		proto := &FuncValue{
 			Name:      fnName,
@@ -197,7 +231,7 @@ func (c *bytecodeCompiler) compileExpr(node parser.Ast) {
 			Params:    paramNames(n.Args),
 		}
 		idx := c.chunk.AddConst(FnVal(proto))
-		c.chunk.Emit(OP_MKFN, idx)
+		c.chunk.Emit(OP_MKFN, idx, line)
 		c.chunk.AddSub(fnChunk)
 	}
 }

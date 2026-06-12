@@ -9,7 +9,7 @@ type scanner struct {
 }
 
 func Tokenize(input string) []Token {
-	s := &scanner{input: input, line: 1}
+	s := &scanner{input: input, line: 1, lastNewline: -1}
 	var tokens []Token
 
 	for !s.isAtEnd() {

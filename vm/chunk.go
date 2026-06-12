@@ -9,6 +9,7 @@ type Chunk struct {
 	Code      []Instruction
 	Constants []Value
 	Names     []string
+	Lines     []int
 	Name      string
 	Subs      []*Chunk
 }
@@ -21,12 +22,14 @@ func (c *Chunk) AddSub(sub *Chunk) {
 	c.Subs = append(c.Subs, sub)
 }
 
-func (c *Chunk) Emit(op Opcode, operand int) {
+func (c *Chunk) Emit(op Opcode, operand int, line int) {
 	c.Code = append(c.Code, MakeInst(op, operand))
+	c.Lines = append(c.Lines, line)
 }
 
-func (c *Chunk) EmitSimple(op Opcode) {
+func (c *Chunk) EmitSimple(op Opcode, line int) {
 	c.Code = append(c.Code, MakeInst(op, 0))
+	c.Lines = append(c.Lines, line)
 }
 
 func (c *Chunk) AddConst(v Value) int {

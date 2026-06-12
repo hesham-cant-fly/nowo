@@ -6,7 +6,7 @@ import (
 
 func runCode(t *testing.T, src string) Value {
 	t.Helper()
-	comp, err := Compile(src)
+	comp, err := Compile("", src)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,11 +69,11 @@ g(5)`
 }
 
 func TestDivisionByZero(t *testing.T) {
-	_, err := Compile("1/0")
+	_, err := Compile("", "1/0")
 	if err != nil {
 		t.Fatal("compile should succeed")
 	}
-	comp, _ := Compile("1/0")
+	comp, _ := Compile("", "1/0")
 	_, err = comp.Run()
 	if err == nil {
 		t.Fatal("expected runtime error")
@@ -199,7 +199,7 @@ func TestArraySubscript(t *testing.T) {
 }
 
 func TestArraySubscriptOutOfBounds(t *testing.T) {
-	comp, err := Compile(`.[1, 2, 3][5]`)
+	comp, err := Compile("", `.[1, 2, 3][5]`)
 	if err != nil {
 		t.Fatal("compile should succeed")
 	}
@@ -268,7 +268,7 @@ f(42, 99)
 }
 
 func TestDefaultParamRequired(t *testing.T) {
-	comp, err := Compile(`
+	comp, err := Compile("", `
 f := (y, x = 1) y
 f()
 `)
@@ -391,7 +391,7 @@ func TestArithExpr(t *testing.T) {
 }
 
 func TestDeclInBody(t *testing.T) {
-	v := runCode(t, `f := (x) { g := (y) x + y; g(1) }
+	v := runCode(t, `f := (x) { {g := (y) x + y}; g(1) }
 f(41)
 `)
 	if v.Type != ValNumber || v.Num != 42 {
@@ -400,7 +400,7 @@ f(41)
 }
 
 func TestCompilerInspect(t *testing.T) {
-	comp, err := Compile("42")
+	comp, err := Compile("", "42")
 	if err != nil {
 		t.Fatal(err)
 	}

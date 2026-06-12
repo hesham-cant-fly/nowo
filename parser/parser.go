@@ -20,6 +20,7 @@ type rule struct {
 }
 
 type ParseError struct {
+	File    string
 	Line    int
 	Col     int
 	Message string
@@ -27,11 +28,15 @@ type ParseError struct {
 }
 
 func (e ParseError) Error() string {
+	loc := e.File
+	if loc == "" {
+		loc = "?"
+	}
 	if e.LineSrc == "" {
-		return fmt.Sprintf("line %d: %s", e.Line, e.Message)
+		return fmt.Sprintf("%s:%d: %s", loc, e.Line, e.Message)
 	}
 	pointer := strings.Repeat(" ", e.Col-1) + "^--- " + e.Message
-	return fmt.Sprintf("  %d | %s\n    | %s", e.Line, e.LineSrc, pointer)
+	return fmt.Sprintf("%s:%d:%d: %s\n  %d | %s\n    | %s", loc, e.Line, e.Col, e.Message, e.Line, e.LineSrc, pointer)
 }
 
 const (
@@ -56,14 +61,16 @@ type parser struct {
 	current  int
 	previous lexer.Token
 	src      string
+	file     string
 	lines    []string
 	errs     []ParseError
 }
 
-func Parse(src string, tokens []lexer.Token) (AstProgram, error) {
+func Parse(file, src string, tokens []lexer.Token) (AstProgram, error) {
 	p := &parser{
 		tokens: tokens,
 		src:    src,
+		file:   file,
 		lines:  strings.Split(src, "\n"),
 	}
 	var program []Ast
@@ -71,6 +78,9 @@ func Parse(src string, tokens []lexer.Token) (AstProgram, error) {
 	for !p.ended() {
 		node, err := p.parseNode()
 		if err != nil {
+			if len(p.errs) > 0 {
+				return AstProgram{}, fmt.Errorf("%s", p.errs[0].Error())
+			}
 			p.advance()
 			continue
 		}
@@ -78,14 +88,7 @@ func Parse(src string, tokens []lexer.Token) (AstProgram, error) {
 	}
 
 	if len(p.errs) > 0 {
-		var b strings.Builder
-		for i, e := range p.errs {
-			if i > 0 {
-				b.WriteByte('\n')
-			}
-			b.WriteString(e.Error())
-		}
-		return AstProgram{}, fmt.Errorf("%s", b.String())
+		return AstProgram{}, fmt.Errorf("%s", p.errs[0].Error())
 	}
 
 	return AstProgram{Nodes: program}, nil
@@ -97,6 +100,7 @@ func (p *parser) err(tok lexer.Token, msg string, args ...any) {
 		lineSrc = p.lines[tok.Line-1]
 	}
 	p.errs = append(p.errs, ParseError{
+		File:    p.file,
 		Line:    tok.Line,
 		Col:     tok.Col,
 		Message: fmt.Sprintf(msg, args...),
@@ -142,12 +146,12 @@ func parseFunction(p *parser) (Ast, error) {
 		return nil, fmt.Errorf("expected ) after parameters")
 	}
 
-	body, err := p.parseExpr(PREC_ASSIGN)
+	body, err := p.parseExpr(PREC_LOWEST)
 	if err != nil {
 		return nil, err
 	}
 
-	return AstFunction{Args: args, Body: body}, nil
+	return AstFunction{Args: args, Body: body, Line: p.previous.Line}, nil
 }
 
 func (p *parser) parseArguments() ([]AstFunctionArg, error) {
@@ -271,8 +275,9 @@ func parseBinding(p *parser, lhs Ast) (Ast, error) {
 	}
 
 	return AstBind{
-		Lhs: lhs,
-		Rhs: rhs,
+		Lhs:  lhs,
+		Rhs:  rhs,
+		Line: p.previous.Line,
 	}, nil
 }
 
@@ -290,6 +295,7 @@ func parseDecl(p *parser, lhs Ast) (Ast, error) {
 	return AstDecl{
 		Lhs:   lhs,
 		Value: value,
+		Line:  p.previous.Line,
 	}, nil
 }
 
@@ -301,9 +307,9 @@ func parsePipe(p *parser, lhs Ast) (Ast, error) {
 
 	switch r := rhs.(type) {
 	case AstCall:
-		return AstCall{Callee: r.Callee, Args: append([]Ast{lhs}, r.Args...)}, nil
+		return AstCall{Callee: r.Callee, Args: append([]Ast{lhs}, r.Args...), Line: p.previous.Line}, nil
 	default:
-		return AstCall{Callee: rhs, Args: []Ast{lhs}}, nil
+		return AstCall{Callee: rhs, Args: []Ast{lhs}, Line: p.previous.Line}, nil
 	}
 }
 
@@ -333,7 +339,7 @@ func parseArrayLiteral(p *parser) (Ast, error) {
 		p.err(tok, "expected ']' to close array literal, got %q", tok.Lexem)
 		return nil, fmt.Errorf("expected ']'")
 	}
-	return AstArray{Elements: elements}, nil
+	return AstArray{Elements: elements, Line: p.previous.Line}, nil
 }
 
 func parseSubscript(p *parser, lhs Ast) (Ast, error) {
@@ -346,15 +352,15 @@ func parseSubscript(p *parser, lhs Ast) (Ast, error) {
 		p.err(tok, "expected ']' after subscript, got %q", tok.Lexem)
 		return nil, fmt.Errorf("expected ']'")
 	}
-	return AstSubscript{Array: lhs, Index: index}, nil
+	return AstSubscript{Array: lhs, Index: index, Line: p.previous.Line}, nil
 }
 
 func parseIdent(p *parser) (Ast, error) {
-	return AstIdentifier{value: p.previous.Lexem}, nil
+	return AstIdentifier{value: p.previous.Lexem, Line: p.previous.Line}, nil
 }
 
 func parseNumber(p *parser) (Ast, error) {
-	return AstNumber{Value: p.previous.Lexem}, nil
+	return AstNumber{Value: p.previous.Lexem, Line: p.previous.Line}, nil
 }
 
 func parseGrouped(p *parser) (Ast, error) {
@@ -367,7 +373,7 @@ func parseGrouped(p *parser) (Ast, error) {
 		p.err(tok, "expected } to close block, got %q", tok.Lexem)
 		return nil, fmt.Errorf("expected }")
 	}
-	return AstGrouping{Child: expr}, nil
+	return AstGrouping{Child: expr, Line: p.previous.Line}, nil
 }
 
 func parseTernary(p *parser, cond Ast) (Ast, error) {
@@ -393,6 +399,7 @@ func parseTernary(p *parser, cond Ast) (Ast, error) {
 		Cond: cond,
 		Then: then,
 		Else: else_,
+		Line: p.previous.Line,
 	}, nil
 }
 
@@ -402,7 +409,7 @@ func parseUnary(p *parser) (Ast, error) {
 	if err != nil {
 		return nil, err
 	}
-	return AstUnary{Op: op, Rhs: rhs}, nil
+	return AstUnary{Op: op, Rhs: rhs, Line: p.previous.Line}, nil
 }
 
 func parseBinary(p *parser, left Ast) (Ast, error) {
@@ -416,7 +423,7 @@ func parseBinary(p *parser, left Ast) (Ast, error) {
 	if err != nil {
 		return nil, err
 	}
-	return AstBinary{Lhs: left, Rhs: right, Op: op}, nil
+	return AstBinary{Lhs: left, Rhs: right, Op: op, Line: p.previous.Line}, nil
 }
 
 // func parseAccess(p *parser, left Ast) (Ast, error) {
@@ -446,7 +453,7 @@ func parseCall(p *parser, callee Ast) (Ast, error) {
 		p.err(tok, "expected ) after arguments, got %q", tok.Lexem)
 		return nil, fmt.Errorf("expected ) after arguments")
 	}
-	return AstCall{Callee: callee, Args: args}, nil
+	return AstCall{Callee: callee, Args: args, Line: p.previous.Line}, nil
 }
 
 func (p *parser) advance() lexer.Token {

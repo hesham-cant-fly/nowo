@@ -16,6 +16,7 @@ type AstProgram struct {
 
 type AstIdentifier struct {
 	value string
+	Line  int
 }
 
 func (n AstIdentifier) Value() string { return n.value }
@@ -23,16 +24,19 @@ func (n AstIdentifier) Value() string { return n.value }
 type AstDecl struct {
 	Lhs   Ast `ast:"child"`
 	Value Ast `ast:"child"`
+	Line  int
 }
 
 type AstAssign struct {
 	Lhs   Ast `ast:"child"`
 	Value Ast `ast:"child"`
+	Line  int
 }
 
 type AstFunction struct {
 	Args []AstFunctionArg
 	Body Ast
+	Line int
 }
 
 type AstFunctionArg struct {
@@ -41,43 +45,51 @@ type AstFunctionArg struct {
 }
 
 type AstBind struct {
-	Lhs Ast
-	Rhs Ast
+	Lhs  Ast
+	Rhs  Ast
+	Line int
 }
 
 type AstTernary struct {
 	Cond Ast `ast:"child"`
 	Then Ast `ast:"child"`
 	Else Ast `ast:"child"`
+	Line int
 }
 
 type AstGrouping struct {
 	Child Ast `ast:"child"`
+	Line  int
 }
 
 type AstBinary struct {
-	Lhs Ast             `ast:"child"`
-	Rhs Ast             `ast:"child"`
-	Op  lexer.TokenKind `ast:"label"`
+	Lhs  Ast             `ast:"child"`
+	Rhs  Ast             `ast:"child"`
+	Op   lexer.TokenKind `ast:"label"`
+	Line int
 }
 
 type AstUnary struct {
-	Rhs Ast             `ast:"child"`
-	Op  lexer.TokenKind `ast:"label"`
+	Rhs  Ast             `ast:"child"`
+	Op   lexer.TokenKind `ast:"label"`
+	Line int
 }
 
 type AstAccess struct {
 	Lhs   Ast    `ast:"child"`
 	Field string `ast:"label"`
+	Line  int
 }
 
 type AstCall struct {
 	Callee Ast
 	Args   []Ast
+	Line   int
 }
 
 type AstArray struct {
 	Elements []Ast
+	Line     int
 }
 
 func (n AstArray) FormatAst(indent string) string {
@@ -102,10 +114,12 @@ func (n AstArray) FormatAst(indent string) string {
 type AstSubscript struct {
 	Array Ast `ast:"child"`
 	Index Ast `ast:"child"`
+	Line  int
 }
 
 type AstNumber struct {
 	Value string
+	Line  int
 }
 
 type CustomFormatter interface {

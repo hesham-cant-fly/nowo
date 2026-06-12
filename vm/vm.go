@@ -6,9 +6,10 @@ import (
 )
 
 type runtimeErr struct {
-	msg string
-	fn  string
-	ip  int
+	msg  string
+	fn   string
+	ip   int
+	line int
 }
 
 type Frame struct {
@@ -33,10 +34,16 @@ type VM struct {
 func New() *VM { return &VM{} }
 
 func (vm *VM) errorf(f *Frame, msg string, args ...any) {
+	ip := f.ip - 1
+	line := 0
+	if ip >= 0 && ip < len(f.fn.Chunk.Lines) {
+		line = f.fn.Chunk.Lines[ip]
+	}
 	panic(runtimeErr{
-		msg: fmt.Sprintf(msg, args...),
-		fn:  f.fn.Name,
-		ip:  f.ip - 1,
+		msg:  fmt.Sprintf(msg, args...),
+		fn:   f.fn.Name,
+		ip:   ip,
+		line: line,
 	})
 }
 
@@ -44,7 +51,15 @@ func (vm *VM) callStack() string {
 	var b strings.Builder
 	for i := len(vm.frames) - 1; i >= 0; i-- {
 		f := vm.frames[i]
-		fmt.Fprintf(&b, "\n  at %s() [ip=%d]", f.fn.Name, f.ip)
+		line := 0
+		if f.ip > 0 && f.ip-1 < len(f.fn.Chunk.Lines) {
+			line = f.fn.Chunk.Lines[f.ip-1]
+		}
+		if line > 0 {
+			fmt.Fprintf(&b, "\n  at %s() [ip=%d, line=%d]", f.fn.Name, f.ip, line)
+		} else {
+			fmt.Fprintf(&b, "\n  at %s() [ip=%d]", f.fn.Name, f.ip)
+		}
 	}
 	return b.String()
 }
@@ -55,7 +70,11 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 			result = NilVal()
 			switch e := r.(type) {
 			case runtimeErr:
-				err = fmt.Errorf("runtime error: %s%s", e.msg, vm.callStack())
+				loc := ""
+				if e.line > 0 {
+					loc = fmt.Sprintf("line %d: ", e.line)
+				}
+				err = fmt.Errorf("runtime error: %s%s%s", loc, e.msg, vm.callStack())
 			default:
 				err = fmt.Errorf("runtime error: %v", r)
 			}

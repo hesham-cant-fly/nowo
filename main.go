@@ -14,9 +14,10 @@ func main() {
 		return
 	}
 
-	src := readEntireFile(userArgs[0])
+	file := userArgs[0]
+	src := readEntireFile(file)
 
-	comp, err := vm.Compile(src)
+	comp, err := vm.Compile(file, src)
 	if err != nil {
 		fmt.Println(err)
 		return
