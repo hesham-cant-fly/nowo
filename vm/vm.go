@@ -301,6 +301,26 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 				f.push(arr.Arr.Elements[i])
 			}
 
+		case OP_SET_INDEX:
+			val := f.pop()
+			index := f.pop()
+			arr := f.pop()
+			if arr.Type != ValArray {
+				vm.errorf(f, "index assignment expects an array, got %s", arr)
+			}
+			if index.Type != ValNumber {
+				vm.errorf(f, "index expects a number, got %s", index)
+			}
+			i := int(index.Num)
+			if i < 0 {
+				i = len(arr.Arr.Elements) + i
+			}
+			if i < 0 || i >= len(arr.Arr.Elements) {
+				vm.errorf(f, "index out of bounds: %d (len %d)", i, len(arr.Arr.Elements))
+			}
+			arr.Arr.Elements[i] = val
+			f.push(val)
+
 		case OP_CONCAT:
 			b := f.pop()
 			a := f.pop()

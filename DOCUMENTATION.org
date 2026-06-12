@@ -97,6 +97,14 @@ b := .[3, 4]
 a ++ b             -- => .[1, 2, 3, 4]
 #+end_src
 
+=arr[i] = val= assigns to an element (zero-based, supports negative indices):
+
+#+begin_src nowo
+arr := .[10, 20, 30]
+arr[1] = 99          -- => .[10, 99, 30]
+arr[-1] = 0          -- => .[10, 99, 0]
+#+end_src
+
 ** Built-ins
 
 - =nil= -- The nil value (can be shadowed).

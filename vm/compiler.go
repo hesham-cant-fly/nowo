@@ -173,9 +173,16 @@ func (c *bytecodeCompiler) compileExpr(node parser.Ast) {
 		c.chunk.Emit(OP_STORE, c.chunk.AddName(name), line)
 
 	case parser.AstAssign:
-		c.compileExpr(n.Value)
-		name := n.Lhs.(parser.AstIdentifier).Value()
-		c.chunk.Emit(OP_STORE, c.chunk.AddName(name), line)
+		switch lhs := n.Lhs.(type) {
+		case parser.AstIdentifier:
+			c.compileExpr(n.Value)
+			c.chunk.Emit(OP_STORE, c.chunk.AddName(lhs.Value()), line)
+		case parser.AstSubscript:
+			c.compileExpr(lhs.Array)
+			c.compileExpr(lhs.Index)
+			c.compileExpr(n.Value)
+			c.chunk.EmitSimple(OP_SET_INDEX, line)
+		}
 
 	case parser.AstCall:
 		c.compileExpr(n.Callee)

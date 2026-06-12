@@ -221,6 +221,8 @@ func getRule(kind lexer.TokenKind) rule {
 		return rule{prefix: parseUnary, prec: PREC_UNARY}
 	case lexer.COLON_EQ:
 		return rule{infix: parseDecl, prec: PREC_ASSIGN}
+	case lexer.EQ:
+		return rule{infix: parseAssign, prec: PREC_ASSIGN}
 	case lexer.COLON:
 		return rule{infix: parsePipe, prec: PREC_PIPE}
 	case lexer.OPEN_PAREN:
@@ -293,6 +295,19 @@ func parseDecl(p *parser, lhs Ast) (Ast, error) {
 	}
 
 	return AstDecl{
+		Lhs:   lhs,
+		Value: value,
+		Line:  p.previous.Line,
+	}, nil
+}
+
+func parseAssign(p *parser, lhs Ast) (Ast, error) {
+	value, err := p.parseExpr(PREC_ASSIGN)
+	if err != nil {
+		return nil, err
+	}
+
+	return AstAssign{
 		Lhs:   lhs,
 		Value: value,
 		Line:  p.previous.Line,

@@ -33,6 +33,7 @@ const (
 	OP_MKFN
 	OP_ARRAY
 	OP_INDEX
+	OP_SET_INDEX
 	OP_CONCAT
 )
 
@@ -53,7 +54,7 @@ func OpName(op Opcode) string {
 		"LEN", "LOAD", "STORE",
 		"JMP", "JIF",
 		"CALL", "RET", "MKFN",
-		"ARRAY", "INDEX", "CONCAT",
+		"ARRAY", "INDEX", "SET_INDEX", "CONCAT",
 	}
 	if int(op) < len(names) {
 		return names[op]
