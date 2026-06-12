@@ -1,268 +1,125 @@
 * Nowo Language
 
-Nowo is a small, functional programming language implemented in Go. It features
-a hand-written lexer, a Pratt parser, and a bytecode VM with closures,
-first-class functions, and dynamic typing.
-
-** Status: Work in Progress
-
-The language is functional but still under active development.
-
-** Project Structure
-
-The project is structured as a Go module with three main packages:
-
-- =lexer/= -- Lexer (tokenizer)
-- =parser/= -- Pratt parser producing an AST
-- =vm/= -- Bytecode compiler and stack-based VM
-
-The entry point is =main.go=, and =nowo.el= provides an Emacs major mode.
-
-** Lexer
-
-File: =lexer/lexer.go=, =lexer/tokens.go=
-
-The lexer converts source text into a flat list of tokens. It uses a
-single-pass scanner with no backtracking.
-
-*** Token Types
-
-| Token       | Lexeme          | Description            |
-|-------------+-----------------+------------------------|
-| =IDENT=     | =foo=, =x=, ... | Identifier             |
-| =INT=       | =67=          | Integer literal        |
-| =FLOAT=     | =3.14=          | Float literal          |
-| =PLUS=      | =+=             | Addition               |
-| =MINUS=     | =-=             | Subtraction            |
-| =STAR=      | =*=             | Multiplication         |
-| =SLASH=     | =/=             | Division               |
-| =OPEN_PAREN= | =(=             | Left paren             |
-| =CLOSE_PAREN= | =)=             | Right paren            |
-| =OPEN_BRACE= | ={=           | Left brace (grouping)  |
-| =CLOSE_BRACE= | =}=             | Right brace            |
-| =QUESTION_M= | =?=             | Ternary then           |
-| =EXCLAMATIO= | =!=             | Ternary else / unary   |
-| =EQ=        | ===             | Assign / default param |
-| =EQEQ=      | =====           | Equality comparison    |
-| =LESS=      | =<=             | Less than              |
-| =GREATER=   | =>=             | Greater than           |
-| =LESS_EQ=   | =<=             | Less or equal          |
-| =GREATER_EQ= | =>==            | Greater or equal       |
-| =BANG_EQ=   | =!=             | Not equal              |
-| =COLON=     | =:=             | Pipe operator          |
-| =COLON_EQ=  | =:==            | Declaration            |
-| =COMMA=     | =,=             | Separator              |
-| =SEMICOLON= | =;=             | Bind (sequencing)      |
-| =HASHTAG=   | =#=             | Length operator        |
-| =DOT=       | =.=             | Array literal prefix   |
-| =OPEN_BRACKE= | =[=             | Subscript / array      |
-| =CLOSE_BRAC= | =]=             | End subscript / array  |
-| =PLUS_PLUS= | =++=            | Array concatenation    |
-
-Comments start with =--= and extend to end of line (lexed as MINUS MINUS).
-
-** Parser
-
-File: =parser/parser.go=, =parser/ast.go=
-
-Uses a Pratt parser (top-down operator precedence) with the following
-precedence levels (lowest to highest):
-
-| Level          | Associativity | Operators               |
-|----------------+---------------+-------------------------|
-| PREC_BIND      | left          | =;=                     |
-| PREC_ASSIGN    | non-assoc     | =:= =                   |
-| PREC_TERNARY   | right         | =?= ... =!=             |
-| PREC_CMP       | left          | ===== =!= =<= >= <= >=  |
-| PREC_TERM      | left          | =+ = -                  |
-| PREC_CONCAT    | left          | =++=                    |
-| PREC_FACTOR    | left          | =*= =/=                 |
-| PREC_SUBSCRIPT | left          | =[=                     |
-| PREC_PIPE      | left          | =:=                     |
-| PREC_ACCESS    | left          | =.=                     |
-| PREC_UNARY     | prefix        | unary =-=, =!=, =#=     |
-| PREC_PRIMARY   | --            | literals, identifiers   |
-
-*** AST Nodes
-
-- AstProgram :: Top-level list of statements
-- AstIdentifier :: Variable reference
-- AstNumber :: Numeric literal
-- AstDecl :: Variable declaration (=x := expr=)
-- AstAssign :: Variable assignment (=x = expr=)
-- AstFunction :: Lambda/function literal (=(args) body=)
-- AstCall :: Function call (=callee(args)=)
-- AstBinary :: Binary infix operation
-- AstUnary :: Unary prefix operation
-- AstTernary :: Ternary conditional (=cond ? then ! else=)
-- AstBind :: Sequencing (=lhs ; rhs=)
-- AstGrouping :: Group/block (=lbrace expr rbrace=)
-- AstArray :: Array literal (=.[elem, ...]=)
-- AstSubscript :: Array index (=arr[index]=)
-
-** Compiler
-
-File: =vm/compiler.go=
-
-The bytecode compiler walks the AST and emits instructions into a =Chunk=.
-Key behaviors:
-
-- Declarations (=:=) compile the value and emit =OP_STORE=.
-- Sequencing (=;=) compiles each sub-expression and emits =OP_POP= between them
-  (last value stays on stack).
-- Grouping (=lbrace ... rbrace=) simply compiles the inner expression.
-- Function literals create a sub-chunk with its own name table. Default
-  parameters are compiled as: load the param → =OP_ISNIL= → conditional jump →
-  compile default value → =OP_STORE=.
-- The pipe operator (=:=) desugars: =expr : fn(args)= becomes =fn(expr, args)=
-  (prepending the left-hand side as the first argument).
-
-** VM
-
-File: =vm/vm.go=
-
-A register-less stack-based VM. The VM uses a frame stack for function calls.
-Each frame has its own value stack and environment.
-
-*** Opcodes
-
-| Opcode     | Operand      | Description                          |
-|------------+--------------+--------------------------------------|
-| =OP_NIL=   | --           | Push nil                             |
-| =OP_TRUE=  | --           | Push 1                               |
-| =OP_FALSE= | --           | Push 0                               |
-| =OP_CONST= | const index   | Push a constant                      |
-| =OP_POP=   | --           | Pop top of stack                     |
-| =OP_ADD=   | --           | Pop b, a; push a + b                 |
-| =OP_SUB=   | --           | Pop b, a; push a - b                 |
-| =OP_MUL=   | --           | Pop b, a; push a * b                 |
-| =OP_DIV=   | --           | Pop b, a; push a / b                 |
-| =OP_NEG=   | --           | Pop a; push -a                       |
-| =OP_EQ=    | --           | Pop b, a; push a == b                |
-| =OP_LT=    | --           | Pop b, a; push a < b                 |
-| =OP_GT=    | --           | Pop b, a; push a > b                 |
-| =OP_LE=    | --           | Pop b, a; push a <= b                |
-| =OP_GE=    | --           | Pop b, a; push a >= b                |
-| =OP_NE=    | --           | Pop b, a; push a != b                |
-| =OP_ISNIL= | --           | Pop a; push a is nil                 |
-| =OP_NOT=   | --           | Pop a; push not a (truthy)           |
-| =OP_LEN=   | --           | Pop a; push len(a)                   |
-| =OP_LOAD=  | name index   | Push variable by name                |
-| =OP_STORE= | name index   | Pop v; store to variable, push v     |
-| =OP_JMP=   | offset       | Unconditional jump                   |
-| =OP_JIF=   | offset       | Pop; jump if falsy                    |
-| =OP_CALL=  | arg count    | Call function/pop args/callee        |
-| =OP_RET=   | --           | Return value to caller               |
-| =OP_MKFN=  | const index   | Create closure from function proto   |
-| =OP_ARRAY= | elem count    | Pop elems; push array                |
-| =OP_INDEX= | --           | Pop index, array; push arr[index]    |
-| =OP_CONCAT=| --           | Pop b, a; push a ++ b (array concat) |
-
-*** Values
-
-Values are dynamically typed. Types:
-- =ValNil= -- The nil value (only falsy value besides 0)
-- =ValNumber= -- 64-bit float
-- =ValFunction= -- Closure (function value with captured environment)
-- =ValBuiltin= -- Built-in Go function
-- =ValArray= -- Heterogeneous array
-
-Truthiness: nil and 0 are falsy; everything else is truthy.
-
-*** Environment
-
-Environments form a linked chain (lexical scoping). =StdEnv()= pre-populates:
-- =nil= -- The nil value (can be shadowed)
-- =print(...)= -- Built-in that prints arguments
-
-*** Function Calls
-
-When calling a function:
-1. Argument count is checked against =HardArity= (required params).
-2. For optional params (params beyond =HardArity=), =nil= is pushed as default
-   then overridden if a default expression was provided.
-3. A new environment is created with the parent function's env as parent.
-4. Parameters are bound as locals in the new environment.
-
-*** Array Features
-
-- =.[...]= creates an array literal.
-- =arr[i]= indexes into an array (zero-based). Negative indices wrap around
-  (e.g., =[-1]= returns the last element).
-- =a ++ b= concatenates two arrays.
-- =#arr= returns the array length.
-
-** Emacs Mode
-
-File: =nowo.el=
-
-Provides an Emacs major mode (=nowo-mode=) with:
-- Syntax highlighting for numbers, function declarations (=:=, =::=), calls,
-  and operators.
-- Indentation support (2-space offset by default, configurable via
-  =nowo-indent-offset=).
-- Comment syntax (=--= line comments).
-- Imenu support for finding function definitions.
-- Auto-loading for =.nowo= files.
-
-** Example Program
-
-File: =example.nowo=
-
-Demonstrates most language features:
-
-#+begin_src nowo
-inc := (x) x + 1
-add := (a, b) a + b
-append := (xs, x) xs ++ .[x]
-
-fact := (x)
-  x == 1 ? x !
-  x * fact(x - 1)
-
-map := (arr, fn)
-  acc := {(arr, fn, i, result)
-    i >= #arr ? result !
-    res := fn(arr[i]);
-    acc(arr, fn, i + 1, result:append(res))};
-  acc(arr, fn, 0, .[])
-
-filter := (arr, fn)
-  acc := {(arr, fn, i, result)
-    i >= #arr  ? result !
-    fn(arr[i]) ? acc(arr, fn, i + 1, result:append(arr[i])) !
-    acc(arr, fn, i + 1, result)};
-  acc(arr, fn, 0, .[])
-
-reduce := (arr, fn, starter, i = 0)
-  i >= #arr ? starter !
-  reduce(arr, fn, fn(starter, arr[i]), i + 1)
-
-items := genList((x) x, inc, (i) i < 5)
-items
-  :map((x) x + 1)
-  :filter(iseven)
-  :reduce(add, 0)
-  :fact()
-  :print()
-#+end_src
+Nowo is a small, functional programming language with dynamic typing,
+first-class functions, closures, and array support.
 
 ** Running
 
 #+begin_src sh
 go run . example.nowo
-#+end_src
-
-** Running Tests
-
-#+begin_src sh
 go test ./...
 #+end_src
 
-** History
+** Syntax
 
-- Initial commit: Lexer with Tokenize, Pratt parser with operator precedence.
-- Default parameters (optional args with =default= expressions), =nil= literal,
-  =#= length operator, =:= pipe operator, ={...}= group/bind, =!= on nil,
-  negative array indexing, =++= array concat, closure captures.
-- Emacs major mode (=nowo-mode=) with syntax highlighting, indentation, imenu.
+*** Literals
+
+| Example     | Type   |
+|-------------+--------|
+| =42=        | Number |
+| =3.14=      | Number |
+| =nil=       | Nil    |
+| =.[1, 2, 3]= | Array  |
+| =.[]=       | Empty array |
+
+*** Identifiers and declarations
+
+#+begin_src nowo
+x := 42           -- declare and bind
+x = 10            -- reassign
+#+end_src
+
+*** Arithmetic
+
+=+ = -= *= /= ++= work as expected. =++= concatenates arrays.
+
+#+begin_src nowo
+1 + 2 * 3         -- => 7 (standard precedence)
+{1 + 2} * 3       -- => 9 (grouping with braces)
+#+end_src
+
+*** Comparison
+
+= == == != < > <= >= = all return 1 (true) or 0 (false).
+
+*** Functions
+
+#+begin_src nowo
+inc := (x) x + 1
+add := (a, b) a + b
+apply := (f, x) f(x)
+
+add(1, 2)          -- => 3
+inc(41)            -- => 42
+#+end_src
+
+Functions with default parameters:
+
+#+begin_src nowo
+f := (x, y = 10, z = y + 1) x + y + z
+f(1)               -- => 1 + 10 + 11 = 22
+f(1, 2)            -- => 1 + 2 + 3 = 6
+f(1, 2, 3)         -- => 1 + 2 + 3 = 6
+#+end_src
+
+*** Conditionals (ternary)
+
+#+begin_src nowo
+x == 1 ? "yes" ! "no"
+x > 0 ? x ! -x
+#+end_src
+
+*** Blocks and sequencing
+
+Braces group expressions. =;= sequences them (last value is returned).
+
+#+begin_src nowo
+{ 1; 2; 3 }        -- => 3
+#+end_src
+
+*** Pipe operator
+
+=expr : fn(args)= becomes =fn(expr, args)=.
+
+#+begin_src nowo
+items :map((x) x + 1) :filter(iseven) :reduce(add, 0)
+#+end_src
+
+*** Arrays
+
+#+begin_src nowo
+arr := .[10, 20, 30]
+arr[1]             -- => 20 (zero-based)
+arr[-1]            -- => 30 (negative wraps)
+#arr               -- => 3 (length)
+a := .[1, 2]
+b := .[3, 4]
+a ++ b             -- => .[1, 2, 3, 4]
+#+end_src
+
+** Built-ins
+
+- =nil= -- The nil value (can be shadowed).
+- =print(...)= -- Prints arguments to stdout, returns nil.
+
+** Truthiness
+
+=nil= and =0= are falsy. Everything else is truthy.
+
+** Comments
+
+=--= starts a line comment.
+
+#+begin_src nowo
+-- this is a comment
+x := 1 -- inline comment
+#+end_src
+
+** Emacs Mode
+
+File =nowo.el= provides =nowo-mode= with syntax highlighting, indentation,
+comment support, and imenu. Auto-loads for =.nowo= files.
+
+** Example
+
+See =example.nowo= for a complete demonstration of all features.
