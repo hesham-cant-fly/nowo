@@ -10,6 +10,7 @@ const (
 	OP_FALSE
 	OP_CONST
 	OP_POP
+	OP_DUP
 	OP_ADD
 	OP_SUB
 	OP_MUL
@@ -33,6 +34,7 @@ const (
 	OP_MKFN
 	OP_ARRAY
 	OP_INDEX
+	OP_SLICE
 	OP_SET_INDEX
 	OP_CONCAT
 )
@@ -48,13 +50,13 @@ func (i Instruction) Operand() int   { return int(i>>8) & 0xffffff }
 
 func OpName(op Opcode) string {
 	names := []string{
-		"NIL", "TRUE", "FALSE", "CONST", "POP",
+		"NIL", "TRUE", "FALSE", "CONST", "POP", "DUP",
 		"ADD", "SUB", "MUL", "DIV", "NEG",
 		"EQ", "LT", "GT", "LE", "GE", "NE", "ISNIL", "NOT",
 		"LEN", "LOAD", "STORE",
 		"JMP", "JIF",
 		"CALL", "RET", "MKFN",
-		"ARRAY", "INDEX", "SET_INDEX", "CONCAT",
+		"ARRAY", "INDEX", "SLICE", "SET_INDEX", "CONCAT",
 	}
 	if int(op) < len(names) {
 		return names[op]

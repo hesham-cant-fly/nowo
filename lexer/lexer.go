@@ -35,6 +35,9 @@ func Tokenize(input string) []Token {
 				for !s.isAtEnd() && s.peek() != '\n' {
 					s.advance()
 				}
+			} else if s.peek() == '>' {
+				s.advance()
+				tokens = append(tokens, s.makeToken(ARROW))
 			} else {
 				tokens = append(tokens, s.makeToken(MINUS))
 			}
@@ -59,6 +62,8 @@ func Tokenize(input string) []Token {
 			} else {
 				tokens = append(tokens, s.makeToken(EXCLAMATION_MARK))
 			}
+		case '|':
+			tokens = append(tokens, s.makeToken(PIPE))
 		case '=':
 			if s.peek() == '=' {
 				s.advance()

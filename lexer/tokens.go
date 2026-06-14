@@ -22,6 +22,8 @@ const (
 	CLOSE_BRACE                // }
 	QUESTION_MARK              // ?
 	EXCLAMATION_MARK           // !
+	PIPE                       // |
+	ARROW                      // ->
 	EQ                         // =
 	EQEQ                       // ==
 	LESS                       // <

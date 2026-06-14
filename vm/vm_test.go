@@ -399,6 +399,114 @@ f(41)
 	}
 }
 
+func TestMatchLiteral(t *testing.T) {
+	v := runCode(t, `42 | 42 -> 1, 0 -> 0`)
+	if v.Type != ValNumber || v.Num != 1 {
+		t.Fatalf("expected 1, got %v", v)
+	}
+}
+
+func TestMatchBind(t *testing.T) {
+	v := runCode(t, `42 | x -> x + 1`)
+	if v.Type != ValNumber || v.Num != 43 {
+		t.Fatalf("expected 43, got %v", v)
+	}
+}
+
+func TestMatchSecondArm(t *testing.T) {
+	v := runCode(t, `0 | 1 -> 99, 0 -> 42`)
+	if v.Type != ValNumber || v.Num != 42 {
+		t.Fatalf("expected 42, got %v", v)
+	}
+}
+
+func TestMatchNoMatchReturnsNil(t *testing.T) {
+	v := runCode(t, `99 | 1 -> 1, 2 -> 2`)
+	if v.Type != ValNil {
+		t.Fatalf("expected nil, got %v", v)
+	}
+}
+
+func TestMatchArrayExact(t *testing.T) {
+	v := runCode(t, `.[1, 2] | .[a, b] -> a + b`)
+	if v.Type != ValNumber || v.Num != 3 {
+		t.Fatalf("expected 3, got %v", v)
+	}
+}
+
+func TestMatchArrayNoMatch(t *testing.T) {
+	v := runCode(t, `.[1, 2, 3] | .[a, b] -> 99`)
+	if v.Type != ValNil {
+		t.Fatalf("expected nil, got %v", v)
+	}
+}
+
+func TestMatchArrayRest(t *testing.T) {
+	v := runCode(t, `.[1, 2, 3] | .[a, *rest] -> a + #rest`)
+	if v.Type != ValNumber || v.Num != 3 {
+		t.Fatalf("expected 3, got %v", v)
+	}
+}
+
+func TestMatchArraySingleRest(t *testing.T) {
+	v := runCode(t, `.[1] | .[a, *rest] -> a + #rest`)
+	if v.Type != ValNumber || v.Num != 1 {
+		t.Fatalf("expected 1, got %v", v)
+	}
+}
+
+func TestMatchNestedArray(t *testing.T) {
+	v := runCode(t, `.[1, .[2, 3]] | .[a, .[b, c]] -> a + b + c`)
+	if v.Type != ValNumber || v.Num != 6 {
+		t.Fatalf("expected 6, got %v", v)
+	}
+}
+
+func TestMatchArrayEmpty(t *testing.T) {
+	v := runCode(t, `.[] | .[] -> 42`)
+	if v.Type != ValNumber || v.Num != 42 {
+		t.Fatalf("expected 42, got %v", v)
+	}
+}
+
+func TestMatchBindAndLiteral(t *testing.T) {
+	v := runCode(t, `42 | 99 -> 1, x -> x`)
+	if v.Type != ValNumber || v.Num != 42 {
+		t.Fatalf("expected 42, got %v", v)
+	}
+}
+
+func TestMatchInFunction(t *testing.T) {
+	v := runCode(t, `
+is_one := (x) x | 1 -> 1, n -> 0
+is_one(1)
+`)
+	if v.Type != ValNumber || v.Num != 1 {
+		t.Fatalf("expected 1, got %v", v)
+	}
+}
+
+func TestMatchInFunctionMiss(t *testing.T) {
+	v := runCode(t, `
+is_one := (x) x | 1 -> 1, n -> 0
+is_one(42)
+`)
+	if v.Type != ValNumber || v.Num != 0 {
+		t.Fatalf("expected 0, got %v", v)
+	}
+}
+
+func TestMatchSliceTypeError(t *testing.T) {
+	comp, err := Compile("", `42 | .[a, b] -> 1`)
+	if err != nil {
+		t.Fatal("compile should succeed")
+	}
+	_, err = comp.Run()
+	if err == nil {
+		t.Fatal("expected runtime error: slice on non-array")
+	}
+}
+
 func TestCompilerInspect(t *testing.T) {
 	comp, err := Compile("", "42")
 	if err != nil {

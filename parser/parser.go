@@ -42,6 +42,7 @@ func (e ParseError) Error() string {
 const (
 	PREC_NONE      = iota
 	PREC_BIND      // ;
+	PREC_MATCH     // |
 	PREC_ASSIGN    // = :=
 	PREC_TERNARY   // ? !
 	PREC_CMP       // == != < > <= >=
@@ -109,28 +110,10 @@ func (p *parser) err(tok lexer.Token, msg string, args ...any) {
 }
 
 func (p *parser) parseNode() (Ast, error) {
-	// if p.check(lexer.IDENT) && p.checkNext(lexer.OPEN_PAREN) {
-	// 	return p.parseFunctionDecl()
-	// }
-
-	// if p.check(lexer.IDENT) && p.checkNext(lexer.EQ) {
-	// 	name := p.advance()
-	// 	p.advance()
-	// 	value, err := p.parseExpr(PREC_TERM)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// 	if p.match(lexer.SEMICOLON) {
-	// 	}
-	// 	return AstDecl{Name: name.Lexem, Value: value}, nil
-	// }
-
 	expr, err := p.parseExpr(PREC_LOWEST)
 	if err != nil {
 		return nil, err
 	}
-	// if p.match(lexer.SEMICOLON) {
-	// }
 	return expr, nil
 }
 
@@ -215,6 +198,8 @@ func (p *parser) parseExpr(prec int) (Ast, error) {
 
 func getRule(kind lexer.TokenKind) rule {
 	switch kind {
+	case lexer.PIPE:
+		return rule{infix: parseMatch, prec: PREC_MATCH, rightAssoc: true}
 	case lexer.SEMICOLON:
 		return rule{infix: parseBinding, prec: PREC_BIND}
 	case lexer.HASHTAG:
@@ -270,8 +255,124 @@ func getRule(kind lexer.TokenKind) rule {
 	}
 }
 
+func parseMatch(p *parser, lhs Ast) (Ast, error) {
+	var arms []AstMatchArm
+	scrutinee := lhs
+	// if m, ok := lhs.(AstMatch); ok {
+	// 	scrutinee = m.Scrutinee
+	// 	arms = m.Arms
+	// }
+
+	for !p.ended() {
+		pat, err := p.parsePattern()
+		if err != nil {
+			return nil, err
+		}
+
+		if !p.match(lexer.ARROW) {
+			tok := p.peek()
+			p.err(tok, "Expected -> after pattern, got %q", tok.Lexem)
+			return nil, fmt.Errorf("Expected ->")
+		}
+
+		body, err := p.parseExpr(PREC_BIND)
+		if err != nil {
+			return nil, err
+		}
+
+		arms = append(arms, AstMatchArm{Pattern: pat, Body: body})
+
+		if !p.match(lexer.COMMA) {
+			break
+		}
+	}
+
+	return AstMatch{
+		Scrutinee: scrutinee,
+		Arms: arms,
+		Line: p.previous.Line,
+	}, nil
+}
+
+func (p *parser) parsePattern() (Ast, error) {
+	if p.check(lexer.INT) || p.check(lexer.FLOAT) {
+		tok := p.peek()
+		expr, err := p.parseExpr(PREC_PRIMARY)
+		if err != nil {
+			return nil, err
+		}
+		return AstPatLiteral{ Value: expr, Line: tok.Line }, nil
+		// return AstPatLiteral{Value: tok.Lexem, Line: tok.Line}, nil
+	}
+
+	if p.check(lexer.DOT) {
+		p.advance()
+		return p.parseArrayPattern()
+	}
+
+	if p.check(lexer.IDENT) {
+		tok := p.advance()
+		return AstPatBind{Name: tok.Lexem, Line: tok.Line}, nil
+	}
+
+	tok := p.advance()
+	p.err(tok, "Expected a pattern, got %q", tok.Lexem)
+	return nil, fmt.Errorf("Expected pattern")
+}
+
+func (p *parser) parseArrayPattern() (Ast, error) {
+	start := p.previous
+	if !p.match(lexer.OPEN_BRACKET) {
+		tok := p.peek()
+		p.err(tok, "Expected [ after . in array pattern")
+		return nil, fmt.Errorf("expected [")
+	}
+
+	var elems []AstPatArrayElement
+	hasRest := false
+	for !p.check(lexer.CLOSE_BRACKET) && !p.ended() {
+		if p.match(lexer.STAR) {
+			tok := p.peek()
+			pattern, err := p.parsePattern()
+			if err != nil {
+				return nil, err
+			}
+			if _, yes := pattern.(AstPatBind); !yes {
+				p.err(tok, "expected a name after *")
+				return nil, fmt.Errorf("Expected name")
+			}
+			elems = append(elems, AstPatArrayElement{Pattern: pattern, Rest: true})
+			hasRest = true
+			break
+		}
+
+		pattern, err := p.parsePattern()
+		if err != nil {
+			return nil, err
+		}
+
+		elems = append(elems, AstPatArrayElement{Pattern: pattern})
+  
+		if !p.check(lexer.CLOSE_BRACKET) && !p.match(lexer.COMMA) {
+			p.err(p.peek(), "expected , or ]")
+			return nil, fmt.Errorf("expected ,")
+		}
+	}
+
+	if !p.match(lexer.CLOSE_BRACKET) {
+		p.err(p.peek(), "expected ]")
+		return nil, fmt.Errorf("expected ]")
+	}
+
+	return AstPatArray{
+		Elements: elems,
+		HasRest: hasRest,
+		Line: start.Line,
+	}, nil
+}
+
 func parseBinding(p *parser, lhs Ast) (Ast, error) {
-	rhs, err := p.parseExpr(PREC_BIND)
+	rhs, err := p.parseExpr(PREC_LOWEST)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +390,7 @@ func parseDecl(p *parser, lhs Ast) (Ast, error) {
 		return nil, fmt.Errorf("expected identifier")
 	}
 
-	value, err := p.parseExpr(PREC_ASSIGN)
+	value, err := p.parseExpr(PREC_MATCH)
 	if err != nil {
 		return nil, err
 	}

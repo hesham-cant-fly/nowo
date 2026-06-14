@@ -105,6 +105,79 @@ arr[1] = 99          -- => .[10, 99, 30]
 arr[-1] = 0          -- => .[10, 99, 0]
 #+end_src
 
+** Pattern matching
+
+The =|= operator destructures a value against one or more patterns. Each arm consists
+of a pattern and a body separated by =->=. The first matching arm's body is evaluated
+and returned. If no arm matches, the expression evaluates to =nil=.
+
+#+begin_src nowo
+42 | 42 -> "matched", _ -> "no"
+-- => "matched"
+#+end_src
+
+Arms are separated by commas:
+
+#+begin_src nowo
+0 | 1 -> "one", 0 -> "zero"
+-- => "zero"
+#+end_src
+
+*** Literal patterns
+
+Match a specific number:
+
+#+begin_src nowo
+n := 3
+n | 1 -> "small", 2 -> "medium", 3 -> "large"
+-- => "large"
+#+end_src
+
+*** Bind patterns
+
+Capture the value into a variable (always matches):
+
+#+begin_src nowo
+42 | x -> x + 1
+-- => 43
+#+end_src
+
+*** Array patterns
+
+Destructure arrays by position. The number of elements must match exactly:
+
+#+begin_src nowo
+.[1, 2, 3] | .[a, b, c] -> a + b + c
+-- => 6
+#+end_src
+
+Use =*name= to capture the remaining elements (array length must be at least
+the number of fixed elements):
+
+#+begin_src nowo
+.[1, 2, 3] | .[x, *rest] -> x + #rest
+-- => 3
+
+.[1] | .[x, *rest] -> x + #rest
+-- => 1
+#+end_src
+
+Empty array pattern:
+
+#+begin_src nowo
+.[] | .[] -> "empty", _ -> "not empty"
+-- => "empty"
+#+end_src
+
+*** Nested patterns
+
+Array patterns can contain other patterns, including nested array patterns:
+
+#+begin_src nowo
+.[1, .[2, 3]] | .[a, .[b, c]] -> a + b + c
+-- => 6
+#+end_src
+
 ** Built-ins
 
 - =nil= -- The nil value (can be shadowed).

@@ -92,6 +92,38 @@ type AstArray struct {
 	Line     int
 }
 
+type AstMatch struct {
+	Scrutinee Ast `ast:"child"`
+	Arms      []AstMatchArm
+	Line      int
+}
+
+type AstMatchArm struct {
+	Pattern Ast `ast:"child"`
+	Body    Ast `ast:"child"`
+}
+
+type AstPatLiteral struct {
+	Value Ast
+	Line  int
+}
+
+type AstPatBind struct {
+	Name string
+	Line int
+}
+
+type AstPatArray struct {
+	Elements []AstPatArrayElement
+	HasRest  bool
+	Line     int
+}
+
+type AstPatArrayElement struct {
+	Pattern Ast
+	Rest    bool
+}
+
 func (n AstArray) FormatAst(indent string) string {
 	var b strings.Builder
 	b.WriteString("Array\n")
@@ -107,6 +139,57 @@ func (n AstArray) FormatAst(indent string) string {
 		}
 		b.WriteString(indent + prefix)
 		b.WriteString(formatAst(elem, childPrefix))
+	}
+	return b.String()
+}
+
+func (n AstMatch) FormatAst(indent string) string {
+	var b strings.Builder
+	b.WriteString("Match\n")
+	b.WriteString(indent + "├─ ")
+	b.WriteString(formatAst(n.Scrutinee, indent+"│  "))
+	for i, arm := range n.Arms {
+		armPrefix := "├─ "
+		armChildIndent := indent + "│  "
+		if i == len(n.Arms)-1 {
+			armPrefix = "└─ "
+			armChildIndent = indent + "   "
+		}
+		b.WriteString("\n" + indent + armPrefix + "Arm\n")
+		b.WriteString(armChildIndent + "├─ Pattern: ")
+		b.WriteString(formatAst(arm.Pattern, armChildIndent+"│  "))
+		b.WriteString("\n" + armChildIndent + "└─ Body: ")
+		b.WriteString(formatAst(arm.Body, armChildIndent+"   "))
+	}
+	return b.String()
+}
+
+func (n AstPatLiteral) FormatAst(indent string) string {
+	return "Num " + formatAstOneLine(n.Value)
+}
+
+func (n AstPatBind) FormatAst(indent string) string {
+	return fmt.Sprintf("Bind %q", n.Name)
+}
+
+func (n AstPatArray) FormatAst(indent string) string {
+	var b strings.Builder
+	b.WriteString("Array\n")
+	for i, elem := range n.Elements {
+		prefix := "├─ "
+		childIndent := indent + "│  "
+		if i == len(n.Elements)-1 {
+			prefix = "└─ "
+			childIndent = indent + "   "
+		}
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(indent + prefix)
+		if elem.Rest {
+			b.WriteString("*")
+		}
+		b.WriteString(formatAst(elem.Pattern, childIndent))
 	}
 	return b.String()
 }
@@ -242,22 +325,23 @@ func formatAst(node Ast, indent string) string {
 }
 
 func deriveLabel(t reflect.Type, v reflect.Value) string {
-	label := strings.TrimPrefix(t.Name(), "Ast")
+	var label strings.Builder
+	label.WriteString(strings.TrimPrefix(t.Name(), "Ast"))
 
 	for i := range t.NumField() {
 		f := t.Field(i)
 		if f.Tag.Get("ast") == "label" {
 			fv := v.Field(i)
 			if f.Type.Kind() == reflect.String {
-				label += " ." + fv.String()
+				label.WriteString(" ." + fv.String())
 			} else if f.Type.Name() == "TokenKind" {
 				kind := lexer.TokenKind(fv.Int())
-				label += " " + tokenSymbol(kind)
+				label.WriteString(" " + tokenSymbol(kind))
 			}
 		}
 	}
 
-	return label
+	return label.String()
 }
 
 func collectChildren(t reflect.Type, v reflect.Value) []Ast {

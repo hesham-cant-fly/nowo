@@ -1,3 +1,4 @@
+
 inc := (x) x + 1
 
 add := (a, b) a + b
@@ -14,13 +15,8 @@ isodd := (n)
 iseven := (n) !isodd(n)
 
 fact := (x)
-  x | 1 -> 1
-    , _ -> x * fact(x - 1)
-
--- TODO: Maybe also allow for thing
--- fib := (x)
---   x | 0, 1 -> 1
---     | n    -> fib(n - 1) + fib(n - 2)
+	x == 1 ? x ! 
+	x * fact(x - 1)
 
 genList := (trans_fn, inc_fn, check_fn)
   acc := {(i, trans_fn, inc_fn, check_fn, result)
@@ -29,24 +25,13 @@ genList := (trans_fn, inc_fn, check_fn)
     acc(inc_fn(i), trans_fn, inc_fn, check_fn, result:append(res))};
   acc(0, trans_fn, inc_fn, check_fn, .[])
 
-map := (arr, fn)
-  arr | .[]       -> .[]
-      , .[x, *xs] -> .[fn(x)] ++ map(xs, fn)
+-- To
+--    ^ we're using comman now :(
 
-filter := (arr, fn)
-  arr | .[]       -> .[]
-      , .[x, *xs] ->
-	    {fn(x) ? .[x] ! .[]} ++ filter(xs, fn)
-
-reduce := (arr, fn, starter)
-  arr | .[]         -> starter
-      , .[x, *rest] -> reduce(rest, fn, fn(starter, x))
-
-items := genList((x) x, inc, (i) i < 5)
+items := genList((x) x, inc, (i) i < 10)
 
 items
   :map((x) x + 1)
   :filter(iseven)
   :reduce(add, 0)
-  :fact()
   :print()

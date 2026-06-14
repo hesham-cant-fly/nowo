@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/hesham-cant-fly/haste-lang/lexer"
@@ -41,39 +42,31 @@ func (c *Compiler) Run() (Value, error) {
 }
 
 type bytecodeCompiler struct {
-	chunk    *Chunk
-	env      *Environment
-	funcName string
+	chunk        *Chunk
+	env          *Environment
+	funcName     string
+	matchCounter int
 }
 
 func astLine(n parser.Ast) int {
 	switch v := n.(type) {
-	case parser.AstNumber:
-		return v.Line
-	case parser.AstIdentifier:
-		return v.Line
-	case parser.AstUnary:
-		return v.Line
-	case parser.AstBinary:
-		return v.Line
-	case parser.AstTernary:
-		return v.Line
-	case parser.AstGrouping:
-		return v.Line
-	case parser.AstBind:
-		return v.Line
-	case parser.AstDecl:
-		return v.Line
-	case parser.AstAssign:
-		return v.Line
-	case parser.AstCall:
-		return v.Line
-	case parser.AstArray:
-		return v.Line
-	case parser.AstSubscript:
-		return v.Line
-	case parser.AstFunction:
-		return v.Line
+	case parser.AstNumber:     return v.Line
+	case parser.AstIdentifier: return v.Line
+	case parser.AstUnary:      return v.Line
+	case parser.AstBinary:     return v.Line
+	case parser.AstTernary:    return v.Line
+	case parser.AstGrouping:   return v.Line
+	case parser.AstBind:       return v.Line
+	case parser.AstDecl:       return v.Line
+	case parser.AstAssign:     return v.Line
+	case parser.AstCall:       return v.Line
+	case parser.AstArray:      return v.Line
+	case parser.AstSubscript:  return v.Line
+	case parser.AstFunction:   return v.Line
+	case parser.AstMatch:      return v.Line
+	case parser.AstPatLiteral: return v.Line
+	case parser.AstPatBind:    return v.Line
+	case parser.AstPatArray:   return v.Line
 	}
 	return 0
 }
@@ -240,7 +233,112 @@ func (c *bytecodeCompiler) compileExpr(node parser.Ast) {
 		idx := c.chunk.AddConst(FnVal(proto))
 		c.chunk.Emit(OP_MKFN, idx, line)
 		c.chunk.AddSub(fnChunk)
+
+	case parser.AstMatch:
+		c.compileExpr(n.Scrutinee)
+		matchName := c.chunk.AddName(fmt.Sprintf("__match_%d", c.matchCounter))
+		c.chunk.Emit(OP_STORE, matchName, line)
+		c.matchCounter += 1
+		c.chunk.EmitSimple(OP_POP, line)
+
+		var endsIndicies []int
+		for _, pattern := range n.Arms {
+			elseIndicies := c.compilePatternCheck(pattern.Pattern, matchName)
+
+			c.compileExpr(pattern.Body)
+
+			endIndex := len(c.chunk.Code)
+			c.chunk.Emit(OP_JMP, 0, line)
+			endsIndicies = append(endsIndicies, endIndex)
+
+			if len(elseIndicies) == 0 {
+				continue
+			}
+
+			for _, elseIndex := range elseIndicies {
+				c.chunk.Code[elseIndex] = MakeInst(OP_JIF, len(c.chunk.Code)-(elseIndex + 1))
+			}
+		}
+
+		for _, endIndex := range endsIndicies {
+			ln := len(c.chunk.Code)
+			c.chunk.Code[endIndex] = MakeInst(OP_JMP, ln - endIndex)
+		}
+
+		// the default branch
+		c.chunk.EmitSimple(OP_NIL, line)
 	}
+}
+
+func (c *bytecodeCompiler) compilePatternCheck(pattern parser.Ast, matchName int) (elseIndex []int) {
+	line := astLine(pattern)
+	if matchName != -1 {
+		c.chunk.Emit(OP_LOAD, matchName, line)
+	}
+
+	switch pattern := pattern.(type) {
+	case parser.AstPatLiteral:
+		// c.chunk.EmitSimple(OP_DUP, line)
+		c.compileExpr(pattern.Value)
+		c.chunk.EmitSimple(OP_EQ, line)
+		elseIndex = append(elseIndex, len(c.chunk.Code))
+		c.chunk.Emit(OP_JIF, 0, line)
+
+	case parser.AstPatBind:
+		// c.chunk.EmitSimple(OP_DUP, line)
+		name := c.chunk.AddName(pattern.Name)
+		c.chunk.Emit(OP_STORE, name, line)
+		c.chunk.EmitSimple(OP_POP, line)
+
+	case parser.AstPatArray:
+		c.chunk.EmitSimple(OP_DUP, line)
+		c.chunk.EmitSimple(OP_LEN, line)
+		elementsLen := len(pattern.Elements)
+
+		// NOTE: exact vs fixed
+
+		if pattern.HasRest {
+			c.chunk.Emit(OP_CONST, c.chunk.AddConst(NumVal(float64(elementsLen - 1))), line)
+			c.chunk.EmitSimple(OP_GE, line)
+		} else {
+			c.chunk.Emit(OP_CONST, c.chunk.AddConst(NumVal(float64(elementsLen))), line)
+			c.chunk.EmitSimple(OP_EQ, line)
+		}
+
+		elseIndex = append(elseIndex, len(c.chunk.Code))
+		c.chunk.Emit(OP_JIF, 0, line)
+
+		for i, element := range pattern.Elements {
+			c.chunk.EmitSimple(OP_DUP, line)
+			if element.Rest {
+				start := c.chunk.AddConst(NumVal(float64(i)))
+				c.chunk.Emit(OP_CONST, start, line)
+				end := c.chunk.AddConst(NumVal(float64(-1)))
+				c.chunk.Emit(OP_CONST, end, line)
+
+				c.chunk.EmitSimple(OP_SLICE, line)
+
+				for _, x := range c.compilePatternCheck(element.Pattern, -1) {
+					elseIndex = append(elseIndex, x)
+				}
+				break
+			}
+
+			c.chunk.Emit(OP_CONST, c.chunk.AddConst(NumVal(float64(i))), line)
+			c.chunk.EmitSimple(OP_INDEX, line)
+
+			for _, x := range c.compilePatternCheck(element.Pattern, -1) {
+				elseIndex = append(elseIndex, x)
+			}
+		}
+
+	default: panic("oops.. this is not supposed to happen :P")
+	}
+
+	// c.chunk.EmitSimple(OP_POP, line)
+
+
+	return
 }
 
 func paramNames(args []parser.AstFunctionArg) []string {

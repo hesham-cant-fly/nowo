@@ -112,6 +112,9 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 		case OP_POP:
 			f.pop()
 
+		case OP_DUP:
+			f.push(f.peek())
+
 		case OP_ADD:
 			b := f.pop()
 			a := f.pop()
@@ -300,6 +303,45 @@ func (vm *VM) Run(main *Chunk) (result Value, err error) {
 			} else {
 				f.push(arr.Arr.Elements[i])
 			}
+
+		case OP_SLICE:
+			end := f.pop()
+			start := f.pop()
+			arr := f.pop()
+			if arr.Type != ValArray {
+				vm.errorf(f, "slice expects an array, got %s", arr)
+			}
+			if start.Type != ValNumber {
+				vm.errorf(f, "slice expects a number for start, got %s", start)
+			}
+			if end.Type != ValNumber {
+				vm.errorf(f, "slice expects a number for end, got %s", end)
+			}
+			s, e := int(start.Num), int(end.Num)
+			if s < 0 {
+				s = len(arr.Arr.Elements) + s
+			}
+			if s < 0 {
+				s = 0
+			}
+			if s > len(arr.Arr.Elements) {
+				s = len(arr.Arr.Elements)
+			}
+			if e == -1 || e > len(arr.Arr.Elements) {
+				e = len(arr.Arr.Elements)
+			}
+			if e < 0 {
+				e = len(arr.Arr.Elements) + e
+			}
+			if e < 0 {
+				e = 0
+			}
+			if s > e {
+				e = s
+			}
+			slice := make([]Value, e-s)
+			copy(slice, arr.Arr.Elements[s:e])
+			f.push(ArrVal(&ArrayValue{Elements: slice}))
 
 		case OP_SET_INDEX:
 			val := f.pop()
